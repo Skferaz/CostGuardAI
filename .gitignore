@@ -1,0 +1,6 @@
+fix.py
+*.pyc
+__pycache__/
+.env
+.DS_Store
+/tmp/

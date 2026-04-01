@@ -1,0 +1,135 @@
+{
+ "AWSTemplateFormatVersion":"2010-09-09",
+ "Description":"CostGuard AI SaaS Platform - Multi-Tenant Production Ready",
+ "Parameters":{
+  "ProjectName":{"Type":"String","Default":"costguard"},
+  "BedrockModelId":{"Type":"String","Default":"anthropic.claude-3-sonnet-20240229-v1:0"},
+  "AlertEmailAddress":{"Type":"String","Default":"admin@example.com"}
+ },
+ "Resources":{
+  "CustomersTable":{
+   "Type":"AWS::DynamoDB::Table",
+   "DeletionPolicy":"Retain",
+   "Properties":{
+    "TableName":{"Fn::Sub":"${ProjectName}-customers"},
+    "BillingMode":"PAY_PER_REQUEST",
+    "AttributeDefinitions":[{"AttributeName":"customerId","AttributeType":"S"}],
+    "KeySchema":[{"AttributeName":"customerId","KeyType":"HASH"}],
+    "PointInTimeRecoverySpecification":{"PointInTimeRecoveryEnabled":true},
+    "SSESpecification":{"SSEEnabled":true}
+   }
+  },
+  "AlertsTable":{
+   "Type":"AWS::DynamoDB::Table",
+   "DeletionPolicy":"Retain",
+   "Properties":{
+    "TableName":{"Fn::Sub":"${ProjectName}-alerts"},
+    "BillingMode":"PAY_PER_REQUEST",
+    "AttributeDefinitions":[{"AttributeName":"alertId","AttributeType":"S"}],
+    "KeySchema":[{"AttributeName":"alertId","KeyType":"HASH"}],
+    "PointInTimeRecoverySpecification":{"PointInTimeRecoveryEnabled":true},
+    "SSESpecification":{"SSEEnabled":true}
+   }
+  },
+  "CostsTable":{
+   "Type":"AWS::DynamoDB::Table",
+   "DeletionPolicy":"Retain",
+   "Properties":{
+    "TableName":{"Fn::Sub":"${ProjectName}-costs"},
+    "BillingMode":"PAY_PER_REQUEST",
+    "AttributeDefinitions":[
+     {"AttributeName":"customerId","AttributeType":"S"},
+     {"AttributeName":"date","AttributeType":"S"}
+    ],
+    "KeySchema":[
+     {"AttributeName":"customerId","KeyType":"HASH"},
+     {"AttributeName":"date","KeyType":"RANGE"}
+    ],
+    "PointInTimeRecoverySpecification":{"PointInTimeRecoveryEnabled":true},
+    "SSESpecification":{"SSEEnabled":true}
+   }
+  },
+  "LambdaExecutionRole":{
+   "Type":"AWS::IAM::Role",
+   "Properties":{
+    "RoleName":{"Fn::Sub":"${ProjectName}-lambda-role"},
+    "AssumeRolePolicyDocument":{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]},
+    "Policies":[{"PolicyName":"CostGuardPolicy","PolicyDocument":{"Version":"2012-10-17","Statement":[
+     {"Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"],"Resource":{"Fn::Sub":"arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*"}},
+     {"Effect":"Allow","Action":["ce:GetCostAndUsage","ce:GetCostForecast"],"Resource":"*"},
+     {"Effect":"Allow","Action":["bedrock:InvokeModel"],"Resource":{"Fn::Sub":"arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}"}},
+     {"Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:GetItem","dynamodb:UpdateItem","dynamodb:DeleteItem","dynamodb:Query","dynamodb:Scan"],"Resource":[{"Fn::GetAtt":["CustomersTable","Arn"]},{"Fn::GetAtt":["AlertsTable","Arn"]},{"Fn::GetAtt":["CostsTable","Arn"]}]},
+     {"Effect":"Allow","Action":["ses:SendEmail","ses:SendRawEmail"],"Resource":{"Fn::Sub":"arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${AlertEmailAddress}"}},
+     {"Effect":"Allow","Action":["sts:AssumeRole"],"Resource":"arn:aws:iam::*:role/CostGuardReadRole"}
+    ]}}]
+   }
+  },
+  "CostAnalyzerLogGroup":{"Type":"AWS::Logs::LogGroup","Properties":{"LogGroupName":{"Fn::Sub":"/aws/lambda/${ProjectName}-cost-analyzer"},"RetentionInDays":14}},
+  "DashboardApiLogGroup":{"Type":"AWS::Logs::LogGroup","Properties":{"LogGroupName":{"Fn::Sub":"/aws/lambda/${ProjectName}-dashboard-api"},"RetentionInDays":14}},
+  "CostAnalyzerLambda":{
+   "Type":"AWS::Lambda::Function",
+   "DependsOn":"CostAnalyzerLogGroup",
+   "Properties":{
+    "FunctionName":{"Fn::Sub":"${ProjectName}-cost-analyzer"},
+    "Runtime":"python3.11","Handler":"index.handler","Timeout":300,"MemorySize":512,
+    "Role":{"Fn::GetAtt":["LambdaExecutionRole","Arn"]},
+    "Environment":{"Variables":{"CUSTOMERS_TABLE":{"Ref":"CustomersTable"},"ALERTS_TABLE":{"Ref":"AlertsTable"},"COSTS_TABLE":{"Ref":"CostsTable"},"BEDROCK_MODEL_ID":{"Ref":"BedrockModelId"},"ALERT_EMAIL":{"Ref":"AlertEmailAddress"}}},
+    "Code":{"ZipFile":"import json, boto3, os\nfrom datetime import datetime, timedelta\n\ndef get_ce_client(role_arn=None):\n    if role_arn:\n        sts = boto3.client('sts')\n        creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuard')['Credentials']\n        return boto3.client('ce', aws_access_key_id=creds['AccessKeyId'], aws_secret_access_key=creds['SecretAccessKey'], aws_session_token=creds['SessionToken'])\n    return boto3.client('ce')\n\ndef analyze_customer(cid, role_arn, email, dynamodb, bedrock, ses):\n    ce = get_ce_client(role_arn)\n    end = datetime.now().strftime('%Y-%m-%d')\n    start = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')\n    wstart = (datetime.now() - timedelta(days=8)).strftime('%Y-%m-%d')\n    r = ce.get_cost_and_usage(TimePeriod={'Start':start,'End':end},Granularity='DAILY',Metrics=['UnblendedCost'])\n    ycost = float(r['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']) if r['ResultsByTime'] else 0\n    wr = ce.get_cost_and_usage(TimePeriod={'Start':wstart,'End':start},Granularity='DAILY',Metrics=['UnblendedCost'])\n    wc = [float(d['Total']['UnblendedCost']['Amount']) for d in wr['ResultsByTime']]\n    avg = sum(wc)/len(wc) if wc else 0\n    pct = ((ycost-avg)/avg*100) if avg>0 else 0\n    br = bedrock.invoke_model(modelId=os.environ['BEDROCK_MODEL_ID'],body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':200,'messages':[{'role':'user','content':f'Analyze AWS cost for {cid}: Yesterday ${ycost:.2f}, 7-day avg ${avg:.2f}, change {pct:.1f}%. Brief insights and recommendations.'}]}))\n    ai = json.loads(br['body'].read())['content'][0]['text']\n    dynamodb.Table(os.environ['COSTS_TABLE']).put_item(Item={'customerId':cid,'date':start,'cost':str(ycost),'avg_cost':str(avg),'percent_change':str(pct),'ai_analysis':ai,'timestamp':datetime.now().isoformat()})\n    if pct>20:\n        dynamodb.Table(os.environ['ALERTS_TABLE']).put_item(Item={'alertId':f'{cid}-spike-{start}','customerId':cid,'service':'AWS','percentChange':str(pct),'aiExplanation':ai,'timestamp':datetime.now().isoformat()})\n        if email:\n            try:\n                ses.send_email(Source=os.environ['ALERT_EMAIL'],Destination={'ToAddresses':[email]},Message={'Subject':{'Data':f'CostGuard: {pct:.1f}% Spike'},'Body':{'Text':{'Data':f'Spike for {cid}: ${ycost:.2f} vs ${avg:.2f} avg ({pct:.1f}%)\\n\\nAI: {ai}'}}})\n            except: pass\n    return {'customer_id':cid,'cost':ycost,'avg':avg,'pct':pct,'alert':pct>20}\n\ndef handler(event, context):\n    dynamodb=boto3.resource('dynamodb');bedrock=boto3.client('bedrock-runtime');ses=boto3.client('ses');results=[]\n    try:\n        results.append(analyze_customer('system',None,os.environ['ALERT_EMAIL'],dynamodb,bedrock,ses))\n        for c in dynamodb.Table(os.environ['CUSTOMERS_TABLE']).scan()['Items']:\n            try: results.append(analyze_customer(c['customerId'],c.get('roleArn'),c.get('email'),dynamodb,bedrock,ses))\n            except Exception as e: results.append({'customer_id':c['customerId'],'error':str(e)})\n        return {'statusCode':200,'body':json.dumps({'status':'success','processed':len(results),'results':results})}\n    except Exception as e: return {'statusCode':500,'body':json.dumps({'error':str(e)})}\n"}
+   }
+  },
+  "DashboardApiLambda":{
+   "Type":"AWS::Lambda::Function",
+   "DependsOn":"DashboardApiLogGroup",
+   "Properties":{
+    "FunctionName":{"Fn::Sub":"${ProjectName}-dashboard-api"},
+    "Runtime":"python3.11","Handler":"index.handler","Timeout":30,"MemorySize":256,
+    "Role":{"Fn::GetAtt":["LambdaExecutionRole","Arn"]},
+    "Environment":{"Variables":{"CUSTOMERS_TABLE":{"Ref":"CustomersTable"},"ALERTS_TABLE":{"Ref":"AlertsTable"},"COSTS_TABLE":{"Ref":"CostsTable"}}},
+    "Code":{"ZipFile":"import json,boto3,os,uuid\nfrom decimal import Decimal\nfrom datetime import datetime\nfrom boto3.dynamodb.conditions import Key\n\ndef dd(obj):\n    if isinstance(obj,Decimal): return float(obj)\n    raise TypeError\n\ndef handler(event,context):\n    dynamodb=boto3.resource('dynamodb')\n    path=event.get('path','')\n    method=event.get('httpMethod','GET')\n    h={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type,Authorization','Access-Control-Allow-Methods':'GET,POST,OPTIONS'}\n    try:\n        if path=='/dashboard':\n            p=event.get('queryStringParameters') or {}\n            cid=p.get('customerId','system')\n            r=dynamodb.Table(os.environ['COSTS_TABLE']).query(KeyConditionExpression=Key('customerId').eq(cid),ScanIndexForward=False,Limit=30)\n            return {'statusCode':200,'headers':h,'body':json.dumps({'costs':r['Items'],'total_items':r['Count']},default=dd)}\n        elif path=='/alerts':\n            r=dynamodb.Table(os.environ['ALERTS_TABLE']).scan(Limit=50)\n            return {'statusCode':200,'headers':h,'body':json.dumps({'alerts':r['Items'],'total_items':r['Count']},default=dd)}\n        elif path=='/cost-summary':\n            p=event.get('queryStringParameters') or {}\n            cid=p.get('customerId','system')\n            r=dynamodb.Table(os.environ['COSTS_TABLE']).query(KeyConditionExpression=Key('customerId').eq(cid))\n            items=r['Items'];tc=sum(float(i.get('cost',0)) for i in items);ac=tc/len(items) if items else 0\n            return {'statusCode':200,'headers':h,'body':json.dumps({'total_cost':tc,'average_daily_cost':ac,'days_tracked':len(items)})}\n        elif path=='/onboard' and method=='POST':\n            body=json.loads(event.get('body','{}'))\n            email=body.get('email','');role_arn=body.get('roleArn','');plan=body.get('plan','free')\n            if not email or not role_arn: return {'statusCode':400,'headers':h,'body':json.dumps({'error':'email and roleArn required'})}\n            cid='cust-'+str(uuid.uuid4())[:8]\n            dynamodb.Table(os.environ['CUSTOMERS_TABLE']).put_item(Item={'customerId':cid,'email':email,'roleArn':role_arn,'plan':plan,'createdAt':datetime.now().isoformat()})\n            return {'statusCode':200,'headers':h,'body':json.dumps({'message':'Onboarded','customerId':cid})}\n        elif path=='/customers':\n            r=dynamodb.Table(os.environ['CUSTOMERS_TABLE']).scan()\n            return {'statusCode':200,'headers':h,'body':json.dumps({'customers':r['Items'],'total':r['Count']},default=dd)}\n        else: return {'statusCode':404,'headers':h,'body':json.dumps({'error':'Not found'})}\n    except Exception as e: return {'statusCode':500,'headers':h,'body':json.dumps({'error':str(e)})}\n"}
+   }
+  },
+  "CostAnalyzerErrorAlarm":{"Type":"AWS::CloudWatch::Alarm","Properties":{"AlarmName":{"Fn::Sub":"${ProjectName}-cost-analyzer-errors"},"MetricName":"Errors","Namespace":"AWS/Lambda","Statistic":"Sum","Period":300,"EvaluationPeriods":1,"Threshold":1,"ComparisonOperator":"GreaterThanOrEqualToThreshold","Dimensions":[{"Name":"FunctionName","Value":{"Ref":"CostAnalyzerLambda"}}]}},
+  "CostAnalyzerThrottleAlarm":{"Type":"AWS::CloudWatch::Alarm","Properties":{"AlarmName":{"Fn::Sub":"${ProjectName}-cost-analyzer-throttles"},"MetricName":"Throttles","Namespace":"AWS/Lambda","Statistic":"Sum","Period":300,"EvaluationPeriods":1,"Threshold":1,"ComparisonOperator":"GreaterThanOrEqualToThreshold","Dimensions":[{"Name":"FunctionName","Value":{"Ref":"CostAnalyzerLambda"}}]}},
+  "DashboardApiErrorAlarm":{"Type":"AWS::CloudWatch::Alarm","Properties":{"AlarmName":{"Fn::Sub":"${ProjectName}-dashboard-api-errors"},"MetricName":"Errors","Namespace":"AWS/Lambda","Statistic":"Sum","Period":300,"EvaluationPeriods":1,"Threshold":1,"ComparisonOperator":"GreaterThanOrEqualToThreshold","Dimensions":[{"Name":"FunctionName","Value":{"Ref":"DashboardApiLambda"}}]}},
+  "DashboardApiThrottleAlarm":{"Type":"AWS::CloudWatch::Alarm","Properties":{"AlarmName":{"Fn::Sub":"${ProjectName}-dashboard-api-throttles"},"MetricName":"Throttles","Namespace":"AWS/Lambda","Statistic":"Sum","Period":300,"EvaluationPeriods":1,"Threshold":1,"ComparisonOperator":"GreaterThanOrEqualToThreshold","Dimensions":[{"Name":"FunctionName","Value":{"Ref":"DashboardApiLambda"}}]}},
+  "DailyScheduler":{"Type":"AWS::Events::Rule","Properties":{"Name":{"Fn::Sub":"${ProjectName}-daily-scheduler"},"ScheduleExpression":"cron(0 6 * * ? *)","State":"ENABLED","Targets":[{"Arn":{"Fn::GetAtt":["CostAnalyzerLambda","Arn"]},"Id":"CostAnalyzerTarget"}]}},
+  "SchedulerPermission":{"Type":"AWS::Lambda::Permission","Properties":{"Action":"lambda:InvokeFunction","FunctionName":{"Ref":"CostAnalyzerLambda"},"Principal":"events.amazonaws.com","SourceArn":{"Fn::GetAtt":["DailyScheduler","Arn"]}}},
+  "CostGuardAPI":{"Type":"AWS::ApiGateway::RestApi","Properties":{"Name":{"Fn::Sub":"${ProjectName}-api"},"EndpointConfiguration":{"Types":["REGIONAL"]}}},
+  "ApiDashboardResource":{"Type":"AWS::ApiGateway::Resource","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ParentId":{"Fn::GetAtt":["CostGuardAPI","RootResourceId"]},"PathPart":"dashboard"}},
+  "ApiAlertsResource":{"Type":"AWS::ApiGateway::Resource","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ParentId":{"Fn::GetAtt":["CostGuardAPI","RootResourceId"]},"PathPart":"alerts"}},
+  "ApiCostSummaryResource":{"Type":"AWS::ApiGateway::Resource","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ParentId":{"Fn::GetAtt":["CostGuardAPI","RootResourceId"]},"PathPart":"cost-summary"}},
+  "ApiOnboardResource":{"Type":"AWS::ApiGateway::Resource","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ParentId":{"Fn::GetAtt":["CostGuardAPI","RootResourceId"]},"PathPart":"onboard"}},
+  "ApiCustomersResource":{"Type":"AWS::ApiGateway::Resource","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ParentId":{"Fn::GetAtt":["CostGuardAPI","RootResourceId"]},"PathPart":"customers"}},
+  "ApiDashboardMethod":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiDashboardResource"},"HttpMethod":"GET","AuthorizationType":"NONE","Integration":{"Type":"AWS_PROXY","IntegrationHttpMethod":"POST","Uri":{"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DashboardApiLambda.Arn}/invocations"}}}},
+  "ApiAlertsMethod":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiAlertsResource"},"HttpMethod":"GET","AuthorizationType":"NONE","Integration":{"Type":"AWS_PROXY","IntegrationHttpMethod":"POST","Uri":{"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DashboardApiLambda.Arn}/invocations"}}}},
+  "ApiCostSummaryMethod":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiCostSummaryResource"},"HttpMethod":"GET","AuthorizationType":"NONE","Integration":{"Type":"AWS_PROXY","IntegrationHttpMethod":"POST","Uri":{"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DashboardApiLambda.Arn}/invocations"}}}},
+  "ApiOnboardMethod":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiOnboardResource"},"HttpMethod":"POST","AuthorizationType":"NONE","Integration":{"Type":"AWS_PROXY","IntegrationHttpMethod":"POST","Uri":{"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DashboardApiLambda.Arn}/invocations"}}}},
+  "ApiCustomersMethod":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiCustomersResource"},"HttpMethod":"GET","AuthorizationType":"NONE","Integration":{"Type":"AWS_PROXY","IntegrationHttpMethod":"POST","Uri":{"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DashboardApiLambda.Arn}/invocations"}}}},
+  "ApiDashboardOptions":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiDashboardResource"},"HttpMethod":"OPTIONS","AuthorizationType":"NONE","Integration":{"Type":"MOCK","RequestTemplates":{"application/json":"{\"statusCode\": 200}"},"IntegrationResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":"'Content-Type,Authorization'","method.response.header.Access-Control-Allow-Methods":"'GET,POST,OPTIONS'","method.response.header.Access-Control-Allow-Origin":"'*'"}}]},"MethodResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":true,"method.response.header.Access-Control-Allow-Methods":true,"method.response.header.Access-Control-Allow-Origin":true}}]}},
+  "ApiAlertsOptions":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiAlertsResource"},"HttpMethod":"OPTIONS","AuthorizationType":"NONE","Integration":{"Type":"MOCK","RequestTemplates":{"application/json":"{\"statusCode\": 200}"},"IntegrationResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":"'Content-Type,Authorization'","method.response.header.Access-Control-Allow-Methods":"'GET,POST,OPTIONS'","method.response.header.Access-Control-Allow-Origin":"'*'"}}]},"MethodResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":true,"method.response.header.Access-Control-Allow-Methods":true,"method.response.header.Access-Control-Allow-Origin":true}}]}},
+  "ApiCostSummaryOptions":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiCostSummaryResource"},"HttpMethod":"OPTIONS","AuthorizationType":"NONE","Integration":{"Type":"MOCK","RequestTemplates":{"application/json":"{\"statusCode\": 200}"},"IntegrationResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":"'Content-Type,Authorization'","method.response.header.Access-Control-Allow-Methods":"'GET,POST,OPTIONS'","method.response.header.Access-Control-Allow-Origin":"'*'"}}]},"MethodResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":true,"method.response.header.Access-Control-Allow-Methods":true,"method.response.header.Access-Control-Allow-Origin":true}}]}},
+  "ApiOnboardOptions":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiOnboardResource"},"HttpMethod":"OPTIONS","AuthorizationType":"NONE","Integration":{"Type":"MOCK","RequestTemplates":{"application/json":"{\"statusCode\": 200}"},"IntegrationResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":"'Content-Type,Authorization'","method.response.header.Access-Control-Allow-Methods":"'GET,POST,OPTIONS'","method.response.header.Access-Control-Allow-Origin":"'*'"}}]},"MethodResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":true,"method.response.header.Access-Control-Allow-Methods":true,"method.response.header.Access-Control-Allow-Origin":true}}]}},
+  "ApiCustomersOptions":{"Type":"AWS::ApiGateway::Method","Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"ResourceId":{"Ref":"ApiCustomersResource"},"HttpMethod":"OPTIONS","AuthorizationType":"NONE","Integration":{"Type":"MOCK","RequestTemplates":{"application/json":"{\"statusCode\": 200}"},"IntegrationResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":"'Content-Type,Authorization'","method.response.header.Access-Control-Allow-Methods":"'GET,POST,OPTIONS'","method.response.header.Access-Control-Allow-Origin":"'*'"}}]},"MethodResponses":[{"StatusCode":"200","ResponseParameters":{"method.response.header.Access-Control-Allow-Headers":true,"method.response.header.Access-Control-Allow-Methods":true,"method.response.header.Access-Control-Allow-Origin":true}}]}},
+  "ApiDeploymentV2":{
+   "Type":"AWS::ApiGateway::Deployment",
+   "DependsOn":["ApiDashboardMethod","ApiAlertsMethod","ApiCostSummaryMethod","ApiOnboardMethod","ApiCustomersMethod","ApiDashboardOptions","ApiAlertsOptions","ApiCostSummaryOptions","ApiOnboardOptions","ApiCustomersOptions"],
+   "Properties":{"RestApiId":{"Ref":"CostGuardAPI"},"StageName":"prod"}
+  },
+  "ApiLambdaPermission":{"Type":"AWS::Lambda::Permission","Properties":{"Action":"lambda:InvokeFunction","FunctionName":{"Ref":"DashboardApiLambda"},"Principal":"apigateway.amazonaws.com","SourceArn":{"Fn::Sub":"arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${CostGuardAPI}/*/*"}}},
+  "UserPool":{"Type":"AWS::Cognito::UserPool","Properties":{"UserPoolName":{"Fn::Sub":"${ProjectName}-users"},"AutoVerifiedAttributes":["email"],"UsernameAttributes":["email"],"Policies":{"PasswordPolicy":{"MinimumLength":8,"RequireUppercase":true,"RequireLowercase":true,"RequireNumbers":true,"RequireSymbols":false}}}},
+  "UserPoolClient":{"Type":"AWS::Cognito::UserPoolClient","Properties":{"ClientName":{"Fn::Sub":"${ProjectName}-client"},"UserPoolId":{"Ref":"UserPool"},"GenerateSecret":false,"ExplicitAuthFlows":["ALLOW_USER_PASSWORD_AUTH","ALLOW_REFRESH_TOKEN_AUTH"]}},
+  "DashboardBucket":{"Type":"AWS::S3::Bucket","Properties":{"BucketName":{"Fn::Sub":"${ProjectName}-dashboard-${AWS::AccountId}"},"PublicAccessBlockConfiguration":{"BlockPublicAcls":true,"BlockPublicPolicy":true,"IgnorePublicAcls":true,"RestrictPublicBuckets":true}}},
+  "CloudFrontOAC":{"Type":"AWS::CloudFront::OriginAccessControl","Properties":{"OriginAccessControlConfig":{"Name":{"Fn::Sub":"${ProjectName}-oac"},"OriginAccessControlOriginType":"s3","SigningBehavior":"always","SigningProtocol":"sigv4"}}},
+  "DashboardCDN":{"Type":"AWS::CloudFront::Distribution","Properties":{"DistributionConfig":{"Enabled":true,"Comment":{"Fn::Sub":"${ProjectName} Dashboard CDN"},"DefaultRootObject":"index.html","DefaultCacheBehavior":{"TargetOriginId":"S3Origin","ViewerProtocolPolicy":"redirect-to-https","AllowedMethods":["GET","HEAD"],"CachedMethods":["GET","HEAD"],"CachePolicyId":"658327ea-f89d-4fab-a63d-7e88639e58f6"},"Origins":[{"Id":"S3Origin","DomainName":{"Fn::GetAtt":["DashboardBucket","RegionalDomainName"]},"S3OriginConfig":{"OriginAccessIdentity":""},"OriginAccessControlId":{"Ref":"CloudFrontOAC"}}],"PriceClass":"PriceClass_100"}}},
+  "DashboardBucketPolicy":{"Type":"AWS::S3::BucketPolicy","DependsOn":"DashboardCDN","Properties":{"Bucket":{"Ref":"DashboardBucket"},"PolicyDocument":{"Statement":[{"Effect":"Allow","Principal":{"Service":"cloudfront.amazonaws.com"},"Action":"s3:GetObject","Resource":{"Fn::Sub":"arn:aws:s3:::${DashboardBucket}/*"},"Condition":{"StringEquals":{"AWS:SourceArn":{"Fn::Sub":"arn:aws:cloudfront::${AWS::AccountId}:distribution/${DashboardCDN}"}}}}]}}}
+ },
+ "Outputs":{
+  "DashboardURL":{"Value":{"Fn::Sub":"https://${DashboardCDN.DomainName}"}},
+  "ApiURL":{"Value":{"Fn::Sub":"https://${CostGuardAPI}.execute-api.${AWS::Region}.amazonaws.com/prod"}},
+  "UserPoolId":{"Value":{"Ref":"UserPool"}},
+  "UserPoolClientId":{"Value":{"Ref":"UserPoolClient"}},
+  "CustomersTableName":{"Value":{"Ref":"CustomersTable"}},
+  "AlertsTableName":{"Value":{"Ref":"AlertsTable"}},
+  "CostsTableName":{"Value":{"Ref":"CostsTable"}}
+ }
+}
