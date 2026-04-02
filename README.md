@@ -36,6 +36,27 @@ Cognito (Auth) → DynamoDB (Data)
 
 ## Deploy
 
+### Option 1: One-Click Setup (Recommended)
+
+```bash
+git clone https://github.com/Skferaz/CostGuardAI.git
+cd CostGuardAI
+./setup.sh
+```
+
+The script will:
+1. Deploy all AWS infrastructure (CloudFormation)
+2. Package and deploy Lambda code
+3. Configure the frontend with your account's URLs
+4. Set up monitoring (SNS alarms, X-Ray, DLQ)
+5. Add health check endpoint
+6. Enable Cognito authentication on all APIs
+7. Verify your email for SES alerts
+
+Takes ~5 minutes. You just need to enter your email.
+
+### Option 2: Manual Deploy
+
 ```bash
 aws cloudformation deploy \
   --template-file costguard-ai.json \
@@ -49,11 +70,16 @@ aws cloudformation deploy \
 Then upload the frontend:
 
 ```bash
-# Get bucket name from stack outputs
 BUCKET=$(aws cloudformation describe-stacks --stack-name costguard-ai --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text)
 
 aws s3 cp frontend/index.html s3://$BUCKET/index.html --content-type "text/html"
 ```
+
+See `setup.sh` for the full list of post-deploy steps (Lambda code, auth, monitoring).
+
+### Moving to a Different AWS Account
+
+Just clone the repo and run `./setup.sh` in the new account — it handles everything automatically.
 
 ## Onboarding a Customer
 
