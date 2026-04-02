@@ -181,7 +181,26 @@ Permissions:
 | POST | /onboard | None* | Register customer account |
 | GET | /customers | None* | List connected accounts |
 
+| POST | /chat | None* | AI chatbot with live resource context |
+
 *Note: Cognito auth is implemented on the frontend. For production, add a Cognito Authorizer to API Gateway.
+
+### AI Chatbot Data Flow
+```
+User asks question in chat UI
+  → POST /chat { question }
+  → DashboardApi Lambda:
+    1. Cost Explorer API → 7-day cost breakdown by service
+    2. S3 ListBuckets → all bucket names
+    3. EC2 DescribeInstances → instance IDs, types, state, names
+    4. Lambda ListFunctions → function names, runtimes, memory
+    5. DynamoDB ListTables → table names
+    6. RDS DescribeDBInstances → DB IDs, classes, engines
+    7. CloudFront ListDistributions → distribution IDs, domains
+    8. Combine all data into context string
+    9. Bedrock Claude API (context + question) → AI answer
+  → Return { answer, cost_data }
+```
 
 ### CORS Configuration
 Each endpoint has an OPTIONS method with MOCK integration returning:

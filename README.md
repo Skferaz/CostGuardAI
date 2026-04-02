@@ -78,13 +78,32 @@ aws iam put-role-policy --role-name CostGuardReadRole \
 | GET | /cost-summary | Aggregated spending summary |
 | POST | /onboard | Register new customer account |
 | GET | /customers | List connected accounts |
+| POST | /chat | AI chatbot — ask about costs & resources |
+
+## AI Chatbot
+
+The built-in AI assistant has live access to your AWS account. Ask it:
+
+- "What S3 buckets exist in my account?"
+- "Which service is costing the most?"
+- "How many Lambda functions are running?"
+- "How can I reduce my AWS bill?"
+- "What EC2 instances are running?"
+
+It fetches real-time data from Cost Explorer + resource APIs (S3, EC2, Lambda, DynamoDB, RDS, CloudFront) and sends it to Bedrock Claude for intelligent answers.
 
 ## Project Structure
 
 ```
-├── costguard-ai.json      # CloudFormation template (entire backend)
+├── costguard-ai.json           # CloudFormation template (entire backend)
 ├── frontend/
-│   └── index.html          # Single-page dashboard app
+│   └── index.html              # Single-page dashboard app (mobile responsive)
+├── lambda/
+│   ├── cost_analyzer.py        # CostAnalyzer Lambda (readable version)
+│   └── dashboard_api.py        # Dashboard API + Chat Lambda (readable version)
+├── docs/
+│   ├── ARCHITECTURE.md         # Architecture deep dive
+│   └── INTERVIEW_QA.md         # Interview questions & answers
 └── README.md
 ```
 

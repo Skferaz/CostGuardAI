@@ -154,6 +154,19 @@ This is necessary because the frontend (CloudFront domain) makes cross-origin re
 ### Q: How much does the AI cost?
 **A:** Roughly $0.003 per input 1K tokens and $0.015 per output 1K tokens for Claude 3 Sonnet. Each analysis uses ~100 input tokens and ~150 output tokens, so about $0.003 per customer per day. For 100 customers, that's ~$9/month.
 
+### Q: How does the AI chatbot work?
+**A:** When a user asks a question, the Lambda:
+1. Fetches the 7-day cost breakdown by service from Cost Explorer
+2. Fetches a live resource inventory — calls S3 ListBuckets, EC2 DescribeInstances, Lambda ListFunctions, DynamoDB ListTables, RDS DescribeDBInstances, CloudFront ListDistributions
+3. Combines all that data into a context string
+4. Sends the context + user question to Bedrock Claude with a system prompt that says "you have access to real AWS data, answer with specific resource names and IDs"
+5. Returns the AI response to the frontend
+
+This means the chatbot can answer questions like "what S3 buckets exist?" with actual bucket names, not generic advice.
+
+### Q: How did you handle the resource discovery permissions?
+**A:** Added read-only describe/list permissions for each service: s3:ListAllMyBuckets, ec2:DescribeInstances, lambda:ListFunctions, dynamodb:ListTables, rds:DescribeDBInstances, cloudfront:ListDistributions. Each API call is wrapped in try/except so if one service fails, the others still work. Resource: * is used since these are read-only list operations that don't support resource-level permissions.
+
 ---
 
 ## DevOps & IaC Questions
