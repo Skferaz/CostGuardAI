@@ -163,6 +163,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="nav-item" onclick="navigate('chat')" id="nav-chat">
    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>AI Chat</span>
   </div>
+  <div class="nav-item" onclick="navigate('reports')" id="nav-reports">
+   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>Reports</span>
+  </div>
   <div class="sidebar-bottom">
    <div class="user-info" id="userEmail"></div>
    <button class="logout-btn" onclick="logout()">Sign Out</button>
@@ -174,7 +177,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    <button class="bottom-nav-item" onclick="mobileNav('alerts')" id="bnav-alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Alerts</button>
    <button class="bottom-nav-item" onclick="mobileNav('chat')" id="bnav-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>AI Chat</button>
    <button class="bottom-nav-item" onclick="mobileNav('summary')" id="bnav-summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Summary</button>
-   <button class="bottom-nav-item" onclick="toggleSidebar()" id="bnav-more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>More</button>
+   <button class="bottom-nav-item" onclick="mobileNav('reports')" id="bnav-reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Reports</button>
   </div>
  </nav>
  <div class="main">
@@ -227,6 +230,17 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostExplorer
     </div>
    </div>
   </div>
+  <div id="view-reports" class="hidden">
+   <h2 class="page-title">📄 Monthly Reports</h2>
+   <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;align-items:center">
+    <input type="month" id="reportMonth" style="padding:10px 14px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:14px">
+    <button class="btn" style="width:auto;padding:10px 20px" onclick="loadReport()">Generate Report</button>
+    <button class="btn" style="width:auto;padding:10px 20px;background:linear-gradient(135deg,#059669,#10b981)" onclick="downloadCSV()" id="csvBtn" disabled>⬇ Download CSV</button>
+   </div>
+   <div id="reportStats" class="stats-grid"></div>
+   <div id="reportServiceTable" class="data-table" style="margin-bottom:24px"></div>
+   <div id="reportDailyTable" class="data-table"></div>
+  </div>
  </div>
 </div>
 <script>
@@ -253,6 +267,9 @@ async function onboard(){const email=document.getElementById('obEmail').value.tr
 async function loadCustomers(){const el=document.getElementById('customersList');el.innerHTML='<div class="loader"><div class="spinner"></div></div>';try{const d=await api('/customers');const c=d.customers||[];if(!c.length){el.innerHTML='<div style="padding:40px;text-align:center;color:#94a3b8">No accounts connected yet. Go to "Add Account" to get started.</div>';return}el.innerHTML=c.map(x=>`<div class="customer-card"><div class="info"><strong>${x.customerId}</strong><span>${x.email||'No email'}</span><span style="color:#64748b;font-size:11px">${x.roleArn||''}</span></div><div><span class="badge-plan">${x.plan||'free'}</span></div></div>`).join('')}catch(e){el.innerHTML=`<div class="stat-card"><div class="value red">${e.message}</div></div>`}}
 function toggleSidebar(){const s=document.getElementById('sidebar'),o=document.getElementById('mobileOverlay');s.classList.toggle('open');o.classList.toggle('show')}
 function mobileNav(p){navigate(p);document.querySelectorAll('.bottom-nav-item').forEach(b=>b.classList.remove('active'));const bn=document.getElementById('bnav-'+p);if(bn)bn.classList.add('active')}
+let lastReport=null;
+async function loadReport(){const m=document.getElementById('reportMonth').value;if(!m){alert('Select a month');return}const s=document.getElementById('reportStats'),st=document.getElementById('reportServiceTable'),dt=document.getElementById('reportDailyTable');s.innerHTML='<div class="loader"><div class="spinner"></div></div>';st.innerHTML='';dt.innerHTML='';try{const d=await api('/report?month='+m);lastReport=d;document.getElementById('csvBtn').disabled=false;s.innerHTML=`<div class="stat-card"><div class="label">Total Cost</div><div class="value blue">$${(d.total_cost||0).toFixed(2)}</div></div><div class="stat-card"><div class="label">Daily Average</div><div class="value purple">$${(d.avg_daily||0).toFixed(2)}</div></div><div class="stat-card"><div class="label">Peak Day</div><div class="value red">${d.peak_day?d.peak_day.date:'N/A'} ($${d.peak_day?(d.peak_day.cost||0).toFixed(2):'0'})</div></div><div class="stat-card"><div class="label">Days in Report</div><div class="value green">${d.days||0}</div></div>`;const svcs=d.service_breakdown||[];if(svcs.length){st.innerHTML=`<table><thead><tr><th>Service</th><th>Cost</th><th>% of Total</th></tr></thead><tbody>${svcs.map(x=>`<tr><td>${x.service}</td><td>$${x.cost.toFixed(2)}</td><td>${d.total_cost>0?(x.cost/d.total_cost*100).toFixed(1):'0'}%</td></tr>`).join('')}</tbody></table>`}const days=d.daily_costs||[];if(days.length){dt.innerHTML=`<table><thead><tr><th>Date</th><th>Cost</th></tr></thead><tbody>${days.map(x=>`<tr><td>${x.date}</td><td>$${x.cost.toFixed(4)}</td></tr>`).join('')}</tbody></table>`}}catch(e){s.innerHTML=`<div class="stat-card"><div class="value red">${e.message}</div></div>`}}
+function downloadCSV(){if(!lastReport)return;let csv='CostGuard AI Monthly Report - '+lastReport.month+'\n\n';csv+='SUMMARY\nTotal Cost,$'+lastReport.total_cost+'\nDaily Average,$'+lastReport.avg_daily+'\nPeak Day,'+lastReport.peak_day.date+',$'+lastReport.peak_day.cost+'\nDays,'+lastReport.days+'\n\n';csv+='SERVICE BREAKDOWN\nService,Cost\n';(lastReport.service_breakdown||[]).forEach(s=>{csv+=s.service+',$'+s.cost+'\n'});csv+='\nDAILY COSTS\nDate,Cost\n';(lastReport.daily_costs||[]).forEach(d=>{csv+=d.date+',$'+d.cost+'\n'});const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='costguard-report-'+lastReport.month+'.csv';a.click();URL.revokeObjectURL(url)}
 async function sendChat(){const input=document.getElementById('chatInput'),btn=document.getElementById('chatSendBtn'),msgs=document.getElementById('chatMessages');const q=input.value.trim();if(!q)return;input.value='';btn.disabled=true;msgs.innerHTML+=`<div class="chat-msg user">${q}</div>`;msgs.innerHTML+='<div class="chat-typing" id="typing">🤖 Analyzing your costs...</div>';msgs.scrollTop=msgs.scrollHeight;try{const d=await apiPost('/chat',{question:q});document.getElementById('typing')?.remove();let answer=d.answer||'Sorry, I could not process that.';if(d.cost_data){let tags=Object.entries(d.cost_data).map(([s,c])=>`<span class="cost-tag">${s}: $${c.toFixed(2)}</span>`).join('');answer=`<div style="margin-bottom:10px">${tags}</div>${answer}`}msgs.innerHTML+=`<div class="chat-msg bot">${answer}</div>`}catch(e){document.getElementById('typing')?.remove();msgs.innerHTML+=`<div class="chat-msg bot" style="border-color:#7f1d1d">Error: ${e.message}</div>`}btn.disabled=false;msgs.scrollTop=msgs.scrollHeight}
 </script>
 </body>
