@@ -25,7 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .sidebar{width:240px;background:#1e293b;border-right:1px solid #334155;padding:20px 0;display:flex;flex-direction:column}
 .sidebar .logo{padding:0 20px 24px;font-size:22px;font-weight:700;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .sidebar .logo span{font-size:12px;display:block;-webkit-text-fill-color:#64748b;margin-top:2px}
-.nav-item{padding:12px 20px;cursor:pointer;display:flex;align-items:center;gap:10px;color:#94a3b8;transition:all 0.2s;font-size:14px}
+.nav-item{padding:12px 20px;cursor:pointer;display:flex;align-items:center;gap:10px;color:#94a3b8;transition:all 0.2s;font-size:14px;-webkit-tap-highlight-color:transparent}
 .nav-item:hover{background:#334155;color:#e2e8f0}
 .nav-item.active{background:#334155;color:#38bdf8;border-right:3px solid #38bdf8}
 .nav-item svg{width:18px;height:18px;flex-shrink:0}
@@ -65,7 +65,51 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .customer-card{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
 .customer-card .info{font-size:14px}.customer-card .info span{color:#94a3b8;font-size:12px;display:block;margin-top:4px}
 .customer-card .badge-plan{padding:4px 12px;border-radius:20px;font-size:12px;background:#1e3a5f;color:#38bdf8}
-@media(max-width:768px){.sidebar{width:60px;padding:12px 0}.sidebar .logo,.nav-item span,.sidebar-bottom .user-info{display:none}.nav-item{justify-content:center;padding:12px}.main{padding:16px}.stats-grid{grid-template-columns:1fr}}
+.chat-container{display:flex;flex-direction:column;height:calc(100vh - 120px);max-width:800px}
+.chat-messages{flex:1;overflow-y:auto;padding:16px 0;display:flex;flex-direction:column;gap:16px}
+.chat-msg{max-width:85%;padding:14px 18px;border-radius:12px;font-size:14px;line-height:1.6;white-space:pre-wrap}
+.chat-msg.user{align-self:flex-end;background:#2563eb;color:#fff;border-bottom-right-radius:4px}
+.chat-msg.bot{align-self:flex-start;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-bottom-left-radius:4px}
+.chat-msg.bot .cost-tag{display:inline-block;background:#0f172a;padding:2px 8px;border-radius:4px;font-size:12px;color:#38bdf8;margin:2px 4px 2px 0}
+.chat-input-row{display:flex;gap:12px;padding-top:16px;border-top:1px solid #334155}
+.chat-input-row input{flex:1;padding:14px 18px;background:#1e293b;border:1px solid #334155;border-radius:12px;color:#e2e8f0;font-size:14px;outline:none}
+.chat-input-row input:focus{border-color:#38bdf8}
+.chat-input-row button{padding:14px 24px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:12px;color:#fff;font-weight:600;cursor:pointer;font-size:14px;white-space:nowrap}
+.chat-input-row button:disabled{opacity:0.5;cursor:not-allowed}
+.chat-typing{color:#94a3b8;font-size:13px;padding:8px 0}
+.mobile-header{display:none;background:#1e293b;padding:12px 16px;border-bottom:1px solid #334155;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.mobile-header .logo{font-size:18px;font-weight:700;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hamburger{background:none;border:none;color:#e2e8f0;font-size:24px;cursor:pointer;padding:4px 8px}
+.mobile-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200}
+.mobile-overlay.show{display:block}
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:#1e293b;border-top:1px solid #334155;z-index:100;padding:6px 0;padding-bottom:env(safe-area-inset-bottom,6px)}
+.bottom-nav-inner{display:flex;justify-content:space-around}
+.bottom-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;color:#64748b;font-size:10px;cursor:pointer;border:none;background:none;min-width:0;flex:1}
+.bottom-nav-item svg{width:20px;height:20px}
+.bottom-nav-item.active{color:#38bdf8}
+@media(max-width:768px){
+ .app{flex-direction:column}
+ .sidebar{display:none;position:fixed;left:0;top:0;bottom:0;width:260px;z-index:300}
+ .sidebar.open{display:flex}
+ .mobile-header{display:flex}
+ .bottom-nav{display:block}
+ .main{padding:16px;padding-bottom:80px}
+ .stats-grid{grid-template-columns:1fr}
+ .page-title{font-size:20px}
+ .stat-card .value{font-size:22px}
+ .stat-card{padding:16px}
+ .data-table{overflow-x:auto}
+ .data-table table{min-width:500px}
+ .auth-box{width:90%;padding:24px;margin:16px}
+ .chat-container{height:calc(100vh - 200px)}
+ .chat-input-row{gap:8px}
+ .chat-input-row input{padding:12px;font-size:16px}
+ .chat-input-row button{padding:12px 16px;font-size:13px}
+ .chat-msg{max-width:92%;font-size:13px;padding:10px 14px}
+ .onboard-form{padding:20px}
+ .step-box code{font-size:11px}
+ .customer-card{flex-direction:column;align-items:flex-start;gap:8px}
+}
 </style>
 </head>
 <body>
@@ -94,7 +138,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
  </div>
 </div>
 <div id="appPage" class="app hidden">
- <div class="sidebar">
+ <div class="mobile-header">
+  <div class="logo">🛡️ CostGuard AI</div>
+  <button class="hamburger" onclick="toggleSidebar()">☰</button>
+ </div>
+ <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar()"></div>
+ <div class="sidebar" id="sidebar">
   <div class="logo">🛡️ CostGuard<span>AI Cost Intelligence</span></div>
   <div class="nav-item active" onclick="navigate('dashboard')" id="nav-dashboard">
    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span>
@@ -111,11 +160,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="nav-item" onclick="navigate('customers')" id="nav-customers">
    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span>Customers</span>
   </div>
+  <div class="nav-item" onclick="navigate('chat')" id="nav-chat">
+   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>AI Chat</span>
+  </div>
   <div class="sidebar-bottom">
    <div class="user-info" id="userEmail"></div>
    <button class="logout-btn" onclick="logout()">Sign Out</button>
   </div>
  </div>
+ <nav class="bottom-nav">
+  <div class="bottom-nav-inner">
+   <button class="bottom-nav-item active" onclick="mobileNav('dashboard')" id="bnav-dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Home</button>
+   <button class="bottom-nav-item" onclick="mobileNav('alerts')" id="bnav-alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Alerts</button>
+   <button class="bottom-nav-item" onclick="mobileNav('chat')" id="bnav-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>AI Chat</button>
+   <button class="bottom-nav-item" onclick="mobileNav('summary')" id="bnav-summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Summary</button>
+   <button class="bottom-nav-item" onclick="toggleSidebar()" id="bnav-more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>More</button>
+  </div>
+ </nav>
  <div class="main">
   <div id="view-dashboard"><h2 class="page-title">Dashboard</h2><div id="dashboardStats" class="stats-grid"></div><div id="dashboardAI"></div><div id="dashboardTable" class="data-table"></div></div>
   <div id="view-alerts" class="hidden"><h2 class="page-title">Cost Alerts</h2><div id="alertsStats" class="stats-grid"></div><div id="alertsTable" class="data-table"></div></div>
@@ -148,6 +209,24 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostExplorer
    </div>
   </div>
   <div id="view-customers" class="hidden"><h2 class="page-title">Connected Accounts</h2><div id="customersList"></div></div>
+  <div id="view-chat" class="hidden">
+   <h2 class="page-title">🤖 AI Cost Assistant</h2>
+   <div class="chat-container">
+    <div class="chat-messages" id="chatMessages">
+     <div class="chat-msg bot">Hi! I'm your CostGuard AI assistant. I can analyze your AWS costs in real-time. Try asking me:
+
+• Which service is costing the most?
+• Why did my costs increase?
+• How can I reduce my AWS bill?
+• What resources should I optimize?
+• Show me my cost breakdown</div>
+    </div>
+    <div class="chat-input-row">
+     <input type="text" id="chatInput" placeholder="Ask about your AWS costs..." onkeydown="if(event.key==='Enter')sendChat()">
+     <button onclick="sendChat()" id="chatSendBtn">Send</button>
+    </div>
+   </div>
+  </div>
  </div>
 </div>
 <script>
@@ -166,12 +245,15 @@ function showApp(){document.getElementById('authPage').classList.add('hidden');d
 (function(){const s=localStorage.getItem('cg_user');if(s){currentUser=JSON.parse(s);showApp()}})();
 async function api(path){const r=await fetch(C.API+path,{headers:currentUser?{'Authorization':'Bearer '+currentUser.idToken}:{}});return r.json()}
 async function apiPost(path,body){const r=await fetch(C.API+path,{method:'POST',headers:{'Content-Type':'application/json',...(currentUser?{'Authorization':'Bearer '+currentUser.idToken}:{})},body:JSON.stringify(body)});return r.json()}
-function navigate(p){document.querySelectorAll('[id^="view-"]').forEach(v=>v.classList.add('hidden'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('view-'+p).classList.remove('hidden');document.getElementById('nav-'+p).classList.add('active');if(p==='dashboard')loadDashboard();else if(p==='alerts')loadAlerts();else if(p==='summary')loadSummary();else if(p==='customers')loadCustomers()}
+function navigate(p){document.querySelectorAll('[id^="view-"]').forEach(v=>v.classList.add('hidden'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('view-'+p).classList.remove('hidden');document.getElementById('nav-'+p).classList.add('active');if(window.innerWidth<=768){document.getElementById('sidebar').classList.remove('open');document.getElementById('mobileOverlay').classList.remove('show')}if(p==='dashboard')loadDashboard();else if(p==='alerts')loadAlerts();else if(p==='summary')loadSummary();else if(p==='customers')loadCustomers();else if(p==='chat')document.getElementById('chatInput').focus()}
 async function loadDashboard(){const s=document.getElementById('dashboardStats'),a=document.getElementById('dashboardAI'),t=document.getElementById('dashboardTable');s.innerHTML='<div class="loader"><div class="spinner"></div></div>';a.innerHTML='';t.innerHTML='';try{const d=await api('/dashboard');const costs=d.costs||[];if(!costs.length){s.innerHTML='<div class="stat-card"><div class="label">No data yet</div><div class="value blue">Waiting for first analysis</div></div>';return}const l=costs[0],c=parseFloat(l.cost||0),av=parseFloat(l.avg_cost||0),ch=parseFloat(l.percent_change||0);s.innerHTML=`<div class="stat-card"><div class="label">Yesterday's Cost</div><div class="value blue">$${c.toFixed(2)}</div></div><div class="stat-card"><div class="label">7-Day Average</div><div class="value purple">$${av.toFixed(2)}</div></div><div class="stat-card"><div class="label">Change</div><div class="value ${ch>20?'red':'green'}">${ch>0?'+':''}${ch.toFixed(1)}%</div></div><div class="stat-card"><div class="label">Days Tracked</div><div class="value">${costs.length}</div></div>`;if(l.ai_analysis)a.innerHTML=`<div class="ai-card"><h3>🤖 AI Analysis</h3><p>${l.ai_analysis}</p></div>`;t.innerHTML=`<table><thead><tr><th>Date</th><th>Cost</th><th>Avg</th><th>Change</th><th>Status</th></tr></thead><tbody>${costs.map(c=>{const p=parseFloat(c.percent_change||0);return`<tr><td>${c.date}</td><td>$${parseFloat(c.cost||0).toFixed(2)}</td><td>$${parseFloat(c.avg_cost||0).toFixed(2)}</td><td>${p>0?'+':''}${p.toFixed(1)}%</td><td><span class="badge ${p>20?'spike':'normal'}">${p>20?'SPIKE':'Normal'}</span></td></tr>`}).join('')}</tbody></table>`}catch(e){s.innerHTML=`<div class="stat-card"><div class="value red">${e.message}</div></div>`}}
 async function loadAlerts(){const s=document.getElementById('alertsStats'),t=document.getElementById('alertsTable');s.innerHTML='<div class="loader"><div class="spinner"></div></div>';t.innerHTML='';try{const d=await api('/alerts');const a=d.alerts||[];s.innerHTML=`<div class="stat-card"><div class="label">Total Alerts</div><div class="value ${a.length?'red':'green'}">${a.length}</div></div>`;if(!a.length){t.innerHTML='<div style="padding:40px;text-align:center;color:#94a3b8">✅ No alerts</div>';return}t.innerHTML=`<table><thead><tr><th>Alert ID</th><th>Customer</th><th>Spike</th><th>Time</th></tr></thead><tbody>${a.map(x=>`<tr><td>${x.alertId||'-'}</td><td>${x.customerId||'-'}</td><td><span class="badge spike">+${parseFloat(x.percentChange||0).toFixed(1)}%</span></td><td>${x.timestamp||'-'}</td></tr>`).join('')}</tbody></table>`}catch(e){s.innerHTML=`<div class="stat-card"><div class="value red">${e.message}</div></div>`}}
 async function loadSummary(){const s=document.getElementById('summaryStats');s.innerHTML='<div class="loader"><div class="spinner"></div></div>';try{const d=await api('/cost-summary');s.innerHTML=`<div class="stat-card"><div class="label">Total Spend</div><div class="value blue">$${(d.total_cost||0).toFixed(2)}</div></div><div class="stat-card"><div class="label">Daily Average</div><div class="value purple">$${(d.average_daily_cost||0).toFixed(2)}</div></div><div class="stat-card"><div class="label">Days Tracked</div><div class="value green">${d.days_tracked||0}</div></div><div class="stat-card"><div class="label">Projected Monthly</div><div class="value">$${((d.average_daily_cost||0)*30).toFixed(2)}</div></div>`}catch(e){s.innerHTML=`<div class="stat-card"><div class="value red">${e.message}</div></div>`}}
 async function onboard(){const email=document.getElementById('obEmail').value.trim(),roleArn=document.getElementById('obRoleArn').value.trim(),plan=document.getElementById('obPlan').value,msg=document.getElementById('onboardMsg');if(!email||!roleArn){msg.innerHTML='<div class="onboard-msg error">Email and Role ARN are required</div>';return}msg.innerHTML='<div class="onboard-msg" style="background:#1e3a5f;color:#38bdf8">Connecting...</div>';try{const d=await apiPost('/onboard',{email,roleArn,plan});msg.innerHTML=`<div class="onboard-msg success">✅ Account connected! Customer ID: ${d.customerId}<br>Cost analysis will run at 6 AM UTC daily.</div>`;document.getElementById('obEmail').value='';document.getElementById('obRoleArn').value=''}catch(e){msg.innerHTML=`<div class="onboard-msg error">${e.message}</div>`}}
 async function loadCustomers(){const el=document.getElementById('customersList');el.innerHTML='<div class="loader"><div class="spinner"></div></div>';try{const d=await api('/customers');const c=d.customers||[];if(!c.length){el.innerHTML='<div style="padding:40px;text-align:center;color:#94a3b8">No accounts connected yet. Go to "Add Account" to get started.</div>';return}el.innerHTML=c.map(x=>`<div class="customer-card"><div class="info"><strong>${x.customerId}</strong><span>${x.email||'No email'}</span><span style="color:#64748b;font-size:11px">${x.roleArn||''}</span></div><div><span class="badge-plan">${x.plan||'free'}</span></div></div>`).join('')}catch(e){el.innerHTML=`<div class="stat-card"><div class="value red">${e.message}</div></div>`}}
+function toggleSidebar(){const s=document.getElementById('sidebar'),o=document.getElementById('mobileOverlay');s.classList.toggle('open');o.classList.toggle('show')}
+function mobileNav(p){navigate(p);document.querySelectorAll('.bottom-nav-item').forEach(b=>b.classList.remove('active'));const bn=document.getElementById('bnav-'+p);if(bn)bn.classList.add('active')}
+async function sendChat(){const input=document.getElementById('chatInput'),btn=document.getElementById('chatSendBtn'),msgs=document.getElementById('chatMessages');const q=input.value.trim();if(!q)return;input.value='';btn.disabled=true;msgs.innerHTML+=`<div class="chat-msg user">${q}</div>`;msgs.innerHTML+='<div class="chat-typing" id="typing">🤖 Analyzing your costs...</div>';msgs.scrollTop=msgs.scrollHeight;try{const d=await apiPost('/chat',{question:q});document.getElementById('typing')?.remove();let answer=d.answer||'Sorry, I could not process that.';if(d.cost_data){let tags=Object.entries(d.cost_data).map(([s,c])=>`<span class="cost-tag">${s}: $${c.toFixed(2)}</span>`).join('');answer=`<div style="margin-bottom:10px">${tags}</div>${answer}`}msgs.innerHTML+=`<div class="chat-msg bot">${answer}</div>`}catch(e){document.getElementById('typing')?.remove();msgs.innerHTML+=`<div class="chat-msg bot" style="border-color:#7f1d1d">Error: ${e.message}</div>`}btn.disabled=false;msgs.scrollTop=msgs.scrollHeight}
 </script>
 </body>
 </html>
