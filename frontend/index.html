@@ -202,7 +202,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    <div class="step-box">
     <h4>Step 1 — Create IAM Role in your AWS account</h4>
     <p style="color:#94a3b8;font-size:13px;margin-top:8px">Run this in your AWS account's CloudShell or CLI:</p>
-    <code>aws iam create-role --role-name CostGuardReadRole --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::651592873649:role/costguard-lambda-role"},"Action":"sts:AssumeRole"}]}'
+    <code>aws iam create-role --role-name CostGuardReadRole --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::717279732828:role/costguard-lambda-role"},"Action":"sts:AssumeRole"}]}'
 
 aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostExplorerRead --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ce:GetCostAndUsage","ce:GetCostForecast"],"Resource":"*"}]}'</code>
    </div>
@@ -257,7 +257,7 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostExplorer
  </div>
 </div>
 <script>
-const C={API:'https://594nsyvgf5.execute-api.us-east-1.amazonaws.com/prod',CLIENT_ID:'6dvbk423e0be959un8n5j7g6h7',REGION:'us-east-1'};
+const C={API:'https://s328a2zjc5.execute-api.us-east-1.amazonaws.com/prod',CLIENT_ID:'6mu4f31meoph10jdvr26c66r9a',REGION:'us-east-1'};
 let currentUser=null,pendingEmail=null;
 function showMsg(t,type){const e=document.getElementById('authMsg');e.textContent=t;e.className='auth-msg '+type;e.classList.remove('hidden')}
 function showLogin(){document.getElementById('loginForm').classList.remove('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('forgotForm').classList.add('hidden');document.getElementById('resetForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
