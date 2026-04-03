@@ -122,6 +122,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    <input type="email" id="loginEmail" placeholder="Email address">
    <input type="password" id="loginPass" placeholder="Password">
    <button onclick="login()">Sign In</button>
+   <div class="auth-toggle"><a onclick="showForgot()">Forgot Password?</a></div>
    <div class="auth-toggle">Don't have an account? <a onclick="showSignup()">Sign Up</a></div>
   </div>
   <div id="signupForm" class="hidden">
@@ -134,6 +135,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    <p style="color:#94a3b8;text-align:center;margin-bottom:16px">Check your email for a verification code</p>
    <input type="text" id="verifyCode" placeholder="Enter 6-digit code">
    <button onclick="verify()">Verify Email</button>
+  </div>
+  <div id="forgotForm" class="hidden">
+   <input type="email" id="forgotEmail" placeholder="Email address">
+   <button onclick="forgotPassword()">Send Reset Code</button>
+   <div class="auth-toggle"><a onclick="showLogin()">Back to Sign In</a></div>
+  </div>
+  <div id="resetForm" class="hidden">
+   <p style="color:#94a3b8;text-align:center;margin-bottom:16px">Enter the code from your email and your new password</p>
+   <input type="text" id="resetCode" placeholder="6-digit code">
+   <input type="password" id="resetPass" placeholder="New password">
+   <button onclick="resetPassword()">Reset Password</button>
+   <div class="auth-toggle"><a onclick="showLogin()">Back to Sign In</a></div>
   </div>
  </div>
 </div>
@@ -247,9 +260,13 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostExplorer
 const C={API:'https://594nsyvgf5.execute-api.us-east-1.amazonaws.com/prod',CLIENT_ID:'6dvbk423e0be959un8n5j7g6h7',REGION:'us-east-1'};
 let currentUser=null,pendingEmail=null;
 function showMsg(t,type){const e=document.getElementById('authMsg');e.textContent=t;e.className='auth-msg '+type;e.classList.remove('hidden')}
-function showLogin(){document.getElementById('loginForm').classList.remove('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
-function showSignup(){document.getElementById('loginForm').classList.add('hidden');document.getElementById('signupForm').classList.remove('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
-function showVerify(){document.getElementById('loginForm').classList.add('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.remove('hidden')}
+function showLogin(){document.getElementById('loginForm').classList.remove('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('forgotForm').classList.add('hidden');document.getElementById('resetForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
+function showSignup(){document.getElementById('loginForm').classList.add('hidden');document.getElementById('signupForm').classList.remove('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('forgotForm').classList.add('hidden');document.getElementById('resetForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
+function showVerify(){document.getElementById('loginForm').classList.add('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.remove('hidden');document.getElementById('forgotForm').classList.add('hidden');document.getElementById('resetForm').classList.add('hidden')}
+function showForgot(){document.getElementById('loginForm').classList.add('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('forgotForm').classList.remove('hidden');document.getElementById('resetForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
+function showReset(){document.getElementById('loginForm').classList.add('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('forgotForm').classList.add('hidden');document.getElementById('resetForm').classList.remove('hidden')}
+async function forgotPassword(){const e=document.getElementById('forgotEmail').value.trim();if(!e)return showMsg('Enter your email','error');try{await cog('ForgotPassword',{ClientId:C.CLIENT_ID,Username:e});pendingEmail=e;showReset();showMsg('Reset code sent to '+e,'success')}catch(x){showMsg(x.message,'error')}}
+async function resetPassword(){const code=document.getElementById('resetCode').value.trim(),pass=document.getElementById('resetPass').value;if(!code||!pass)return showMsg('Fill all fields','error');try{await cog('ConfirmForgotPassword',{ClientId:C.CLIENT_ID,Username:pendingEmail,ConfirmationCode:code,Password:pass});showMsg('Password reset! Sign in now.','success');showLogin()}catch(x){showMsg(x.message,'error')}}
 async function cog(action,payload){const r=await fetch('https://cognito-idp.'+C.REGION+'.amazonaws.com/',{method:'POST',headers:{'Content-Type':'application/x-amz-json-1.1','X-Amz-Target':'AWSCognitoIdentityProviderService.'+action},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.message||d.__type);return d}
 async function signup(){const e=document.getElementById('signupEmail').value.trim(),p=document.getElementById('signupPass').value;if(!e||!p)return showMsg('Fill all fields','error');try{await cog('SignUp',{ClientId:C.CLIENT_ID,Username:e,Password:p,UserAttributes:[{Name:'email',Value:e}]});pendingEmail=e;showVerify();showMsg('Code sent to '+e,'success')}catch(x){showMsg(x.message,'error')}}
 async function verify(){const c=document.getElementById('verifyCode').value.trim();if(!c)return showMsg('Enter code','error');try{await cog('ConfirmSignUp',{ClientId:C.CLIENT_ID,Username:pendingEmail,ConfirmationCode:c});showMsg('Verified! Sign in now.','success');showLogin();document.getElementById('loginEmail').value=pendingEmail}catch(x){showMsg(x.message,'error')}}
