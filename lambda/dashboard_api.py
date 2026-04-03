@@ -122,18 +122,23 @@ def handler(event, context):
             question = body.get('question', '').strip()
             if not question: return resp(400, {'error': 'question is required'})
             if len(question) > 1000: return resp(400, {'error': 'Question too long (max 1000 chars)'})
-            ce = boto3.client('ce')
-            end = datetime.now().strftime('%Y-%m-%d')
-            start = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-            svc = ce.get_cost_and_usage(TimePeriod={'Start':start,'End':end},Granularity='DAILY',Metrics=['UnblendedCost'],GroupBy=[{'Type':'DIMENSION','Key':'SERVICE'}])
-            svc_costs = {}
-            for day in svc['ResultsByTime']:
-                for g in day['Groups']:
-                    sn = g['Keys'][0]; cv = float(g['Metrics']['UnblendedCost']['Amount'])
-                    svc_costs[sn] = svc_costs.get(sn, 0) + cv
-            svc_sorted = sorted(svc_costs.items(), key=lambda x: x[1], reverse=True)[:15]
-            ctx = 'AWS Cost Breakdown (Last 7 Days):\n'
-            for sn, cv in svc_sorted: ctx += '  ' + sn + ': $' + str(round(cv, 2)) + '\n'
+            ctx = ''
+            svc_sorted = []
+            try:
+                ce = boto3.client('ce')
+                end = datetime.now().strftime('%Y-%m-%d')
+                start = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+                svc = ce.get_cost_and_usage(TimePeriod={'Start':start,'End':end},Granularity='DAILY',Metrics=['UnblendedCost'],GroupBy=[{'Type':'DIMENSION','Key':'SERVICE'}])
+                svc_costs = {}
+                for day in svc['ResultsByTime']:
+                    for g in day['Groups']:
+                        sn = g['Keys'][0]; cv = float(g['Metrics']['UnblendedCost']['Amount'])
+                        svc_costs[sn] = svc_costs.get(sn, 0) + cv
+                svc_sorted = sorted(svc_costs.items(), key=lambda x: x[1], reverse=True)[:15]
+                ctx = 'AWS Cost Breakdown (Last 7 Days):\n'
+                for sn, cv in svc_sorted: ctx += '  ' + sn + ': $' + str(round(cv, 2)) + '\n'
+            except:
+                ctx = 'AWS Cost data: Not available (Cost Explorer may not be enabled)\n'
             ctx += '\n' + cached('resources', 300, get_resource_inventory)
             bedrock = boto3.client('bedrock-runtime')
             br = bedrock.invoke_model(modelId=os.environ['BEDROCK_MODEL_ID'], body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':500,'system':'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources. Answer with specific resource names and IDs. Be concise and actionable.','messages':[{'role':'user','content':ctx+'\nUser Question: '+question}]}))
@@ -144,24 +149,27 @@ def handler(event, context):
             import calendar
             month = params.get('month', '')
             if not month or not re.match(r'^\d{4}-\d{2}$', month): return resp(400, {'error': 'month param required (YYYY-MM)'})
-            yr, mn = int(month.split('-')[0]), int(month.split('-')[1])
-            last_day = calendar.monthrange(yr, mn)[1]
-            ms = month + '-01'; me = month + '-' + str(last_day)
-            today = datetime.now().strftime('%Y-%m-%d')
-            if me > today: me = today
-            ce = boto3.client('ce')
-            daily = ce.get_cost_and_usage(TimePeriod={'Start':ms,'End':me},Granularity='DAILY',Metrics=['UnblendedCost'])
-            daily_data = [{'date':d['TimePeriod']['Start'],'cost':round(float(d['Total']['UnblendedCost']['Amount']),4)} for d in daily['ResultsByTime']]
-            svc = ce.get_cost_and_usage(TimePeriod={'Start':ms,'End':me},Granularity='MONTHLY',Metrics=['UnblendedCost'],GroupBy=[{'Type':'DIMENSION','Key':'SERVICE'}])
-            svc_data = []
-            for g in (svc['ResultsByTime'][0]['Groups'] if svc['ResultsByTime'] else []):
-                c = round(float(g['Metrics']['UnblendedCost']['Amount']), 4)
-                if c > 0: svc_data.append({'service':g['Keys'][0],'cost':c})
-            svc_data.sort(key=lambda x: x['cost'], reverse=True)
-            total = sum(d['cost'] for d in daily_data)
-            avg = total / len(daily_data) if daily_data else 0
-            peak = max(daily_data, key=lambda x: x['cost']) if daily_data else {'date':'N/A','cost':0}
-            return resp(200, {'month':month,'total_cost':round(total,2),'avg_daily':round(avg,2),'peak_day':peak,'days':len(daily_data),'daily_costs':daily_data,'service_breakdown':svc_data})
+            try:
+                yr, mn = int(month.split('-')[0]), int(month.split('-')[1])
+                last_day = calendar.monthrange(yr, mn)[1]
+                ms = month + '-01'; me = month + '-' + str(last_day)
+                today = datetime.now().strftime('%Y-%m-%d')
+                if me > today: me = today
+                ce = boto3.client('ce')
+                daily = ce.get_cost_and_usage(TimePeriod={'Start':ms,'End':me},Granularity='DAILY',Metrics=['UnblendedCost'])
+                daily_data = [{'date':d['TimePeriod']['Start'],'cost':round(float(d['Total']['UnblendedCost']['Amount']),4)} for d in daily['ResultsByTime']]
+                svc = ce.get_cost_and_usage(TimePeriod={'Start':ms,'End':me},Granularity='MONTHLY',Metrics=['UnblendedCost'],GroupBy=[{'Type':'DIMENSION','Key':'SERVICE'}])
+                svc_data = []
+                for g in (svc['ResultsByTime'][0]['Groups'] if svc['ResultsByTime'] else []):
+                    c = round(float(g['Metrics']['UnblendedCost']['Amount']), 4)
+                    if c > 0: svc_data.append({'service':g['Keys'][0],'cost':c})
+                svc_data.sort(key=lambda x: x['cost'], reverse=True)
+                total = sum(d['cost'] for d in daily_data)
+                avg = total / len(daily_data) if daily_data else 0
+                peak = max(daily_data, key=lambda x: x['cost']) if daily_data else {'date':'N/A','cost':0}
+                return resp(200, {'month':month,'total_cost':round(total,2),'avg_daily':round(avg,2),'peak_day':peak,'days':len(daily_data),'daily_costs':daily_data,'service_breakdown':svc_data})
+            except Exception as e:
+                return resp(500, {'error': 'Cost Explorer may not be enabled. Enable it at https://console.aws.amazon.com/cost-management/home#/cost-explorer. Error: ' + str(e)})
 
         else:
             return resp(404, {'error': 'Not found'})
