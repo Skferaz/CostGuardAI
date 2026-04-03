@@ -141,8 +141,16 @@ def handler(event, context):
                 ctx = 'AWS Cost data: Not available (Cost Explorer may not be enabled)\n'
             ctx += '\n' + cached('resources', 300, get_resource_inventory)
             bedrock = boto3.client('bedrock-runtime')
-            br = bedrock.invoke_model(modelId=os.environ['BEDROCK_MODEL_ID'], body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':500,'system':'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources. Answer with specific resource names and IDs. Be concise and actionable.','messages':[{'role':'user','content':ctx+'\nUser Question: '+question}]}))
-            answer = json.loads(br['body'].read())['content'][0]['text']
+            model_id = os.environ['BEDROCK_MODEL_ID']
+            if 'titan' in model_id:
+                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'inputText': ctx + '\nUser Question: ' + question, 'textGenerationConfig': {'maxTokenCount': 500, 'temperature': 0.7}}))
+                answer = json.loads(br['body'].read())['results'][0]['outputText']
+            elif 'nova' in model_id:
+                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'schemaVersion': 'messages-v1', 'system': [{'text': 'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources. Answer with specific resource names and IDs. Be concise and actionable.'}], 'messages': [{'role': 'user', 'content': [{'text': ctx + '\nUser Question: ' + question}]}], 'inferenceConfig': {'max_new_tokens': 500}}))
+                answer = json.loads(br['body'].read())['output']['message']['content'][0]['text']
+            else:
+                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':500,'system':'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources. Answer with specific resource names and IDs. Be concise and actionable.','messages':[{'role':'user','content':ctx+'\nUser Question: '+question}]}))
+                answer = json.loads(br['body'].read())['content'][0]['text']
             return resp(200, {'answer': answer, 'cost_data': dict(svc_sorted)})
 
         elif path == '/report':
