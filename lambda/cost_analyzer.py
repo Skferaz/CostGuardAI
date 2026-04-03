@@ -27,8 +27,13 @@ def analyze_customer(cid, role_arn, email, dynamodb, bedrock, ses):
     pct = ((ycost-avg)/avg*100) if avg>0 else 0
     ai = ''
     try:
-        br = retry(lambda: bedrock.invoke_model(modelId=os.environ['BEDROCK_MODEL_ID'],body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':200,'messages':[{'role':'user','content':'Analyze AWS cost for '+cid+': Yesterday $'+str(round(ycost,2))+', 7-day avg $'+str(round(avg,2))+', change '+str(round(pct,1))+'%. Brief insights.'}]})))
-        ai = json.loads(br['body'].read())['content'][0]['text']
+        model_id = os.environ['BEDROCK_MODEL_ID']
+        if 'nova' in model_id:
+            br = retry(lambda: bedrock.invoke_model(modelId=model_id,body=json.dumps({'schemaVersion':'messages-v1','system':[{'text':'You are an AWS cost analyst. Provide brief cost insights and recommendations.'}],'messages':[{'role':'user','content':[{'text':'Analyze AWS cost for '+cid+': Yesterday $'+str(round(ycost,2))+', 7-day avg $'+str(round(avg,2))+', change '+str(round(pct,1))+'%. Brief insights.'}]}],'inferenceConfig':{'max_new_tokens':200}})))
+            ai = json.loads(br['body'].read())['output']['message']['content'][0]['text']
+        else:
+            br = retry(lambda: bedrock.invoke_model(modelId=model_id,body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':200,'messages':[{'role':'user','content':'Analyze AWS cost for '+cid+': Yesterday $'+str(round(ycost,2))+', 7-day avg $'+str(round(avg,2))+', change '+str(round(pct,1))+'%. Brief insights.'}]})))
+            ai = json.loads(br['body'].read())['content'][0]['text']
     except: ai = 'AI analysis unavailable'
     dynamodb.Table(os.environ['COSTS_TABLE']).put_item(Item={'customerId':cid,'date':start,'cost':str(ycost),'avg_cost':str(avg),'percent_change':str(pct),'ai_analysis':ai,'timestamp':datetime.now().isoformat()})
     if pct > 20:
