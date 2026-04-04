@@ -79,6 +79,32 @@ def handler(event, context):
     params = event.get('queryStringParameters') or {}
 
     try:
+        # Extract caller email from JWT
+        caller_email = ''
+        try:
+            claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+            caller_email = claims.get('email', '')
+            if not caller_email:
+                auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header else ''
+                if token and '.' in token:
+                    import base64
+                    payload = token.split('.')[1]
+                    payload += '=' * (4 - len(payload) % 4)
+                    decoded = json.loads(base64.b64decode(payload))
+                    caller_email = decoded.get('email', '')
+        except: pass
+
+        admin_email = os.environ.get('ADMIN_EMAIL', '')
+        is_admin = caller_email and caller_email == admin_email
+
+        # For data endpoints, check if user is admin or registered customer
+        protected_paths = ['/dashboard', '/alerts', '/cost-summary', '/report']
+        if path in protected_paths and not is_admin:
+            cust_scan = dynamodb.Table(os.environ['CUSTOMERS_TABLE']).scan(FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(caller_email)) if caller_email else {'Items': []}
+            if not cust_scan['Items']:
+                return resp(200, {'costs': [], 'alerts': [], 'total_items': 0, 'total_cost': 0, 'average_daily_cost': 0, 'days_tracked': 0, 'message': 'Connect your AWS account to see your cost data. Go to Add Account page.'})
+
         if path == '/health':
             return resp(200, {'status': 'healthy', 'timestamp': datetime.now().isoformat()})
 
@@ -138,11 +164,25 @@ def handler(event, context):
             try:
                 claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
                 caller_email = claims.get('email', '')
+                if not caller_email:
+                    auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
+                    token = auth_header.replace('Bearer ', '')
+                    if token:
+                        import base64
+                        payload = token.split('.')[1]
+                        payload += '=' * (4 - len(payload) % 4)
+                        decoded = json.loads(base64.b64decode(payload))
+                        caller_email = decoded.get('email', '')
             except: pass
 
-            # Look up customer record to get their cross-account role
-            customer_id = 'system'
-            if caller_email:
+            # Look up customer record
+            customer_id = None
+            is_admin = False
+            admin_email = os.environ.get('ADMIN_EMAIL', '')
+            if caller_email and caller_email == admin_email:
+                is_admin = True
+                customer_id = 'system'
+            elif caller_email:
                 try:
                     cust_table = dynamodb.Table(os.environ['CUSTOMERS_TABLE'])
                     cust_scan = cust_table.scan(FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(caller_email))
@@ -151,6 +191,10 @@ def handler(event, context):
                         role_arn = cust_scan['Items'][0].get('roleArn', '')
                         if not role_arn: role_arn = None
                 except: pass
+
+            # Block unregistered users from seeing any account data
+            if not customer_id:
+                return resp(200, {'answer': 'Welcome to CostGuard AI! To use the chatbot, please connect your AWS account first.\n\nGo to the **Add Account** page in the sidebar and follow the 3 simple steps to connect your AWS account. Once connected, I can analyze your costs, list your resources, and provide optimization recommendations.', 'cost_data': {}})
 
             ctx = ''
             svc_sorted = []
