@@ -23,15 +23,24 @@ def resp(code, body):
 def validate_arn(arn):
     return bool(re.match(r'^arn:aws:iam::\d{12}:role/.+$', arn))
 
-def get_resource_inventory():
+def get_resource_inventory(role_arn=None):
     ctx = ''
+    if role_arn:
+        try:
+            sts = boto3.client('sts')
+            creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardResources')['Credentials']
+            session = boto3.Session(aws_access_key_id=creds['AccessKeyId'], aws_secret_access_key=creds['SecretAccessKey'], aws_session_token=creds['SessionToken'])
+        except:
+            return 'Resource inventory: Unable to access customer account\n'
+    else:
+        session = boto3.Session()
     try:
-        bkts = boto3.client('s3').list_buckets().get('Buckets', [])
+        bkts = session.client('s3').list_buckets().get('Buckets', [])
         ctx += 'S3 Buckets ('+str(len(bkts))+'):\n'
         for b in bkts: ctx += '  - '+b.get('Name','')+'\n'
     except: pass
     try:
-        ec2r = boto3.client('ec2').describe_instances()['Reservations']
+        ec2r = session.client('ec2').describe_instances()['Reservations']
         il = []
         for rv in ec2r:
             for inst in rv['Instances']:
@@ -42,22 +51,22 @@ def get_resource_inventory():
         ctx += 'EC2 Instances ('+str(len(il))+'):\n'+'\n'.join(il)+'\n'
     except: pass
     try:
-        fns = boto3.client('lambda').list_functions()['Functions']
+        fns = session.client('lambda').list_functions()['Functions']
         ctx += 'Lambda Functions ('+str(len(fns))+'):\n'
         for fn in fns: ctx += '  - '+fn.get('FunctionName','')+' ('+fn.get('Runtime','N/A')+', '+str(fn.get('MemorySize',''))+'MB)\n'
     except: pass
     try:
-        tbs = boto3.client('dynamodb').list_tables()['TableNames']
+        tbs = session.client('dynamodb').list_tables()['TableNames']
         ctx += 'DynamoDB Tables ('+str(len(tbs))+'):\n'
         for tb in tbs: ctx += '  - '+tb+'\n'
     except: pass
     try:
-        rdsl = boto3.client('rds').describe_db_instances()['DBInstances']
+        rdsl = session.client('rds').describe_db_instances()['DBInstances']
         ctx += 'RDS Instances ('+str(len(rdsl))+'):\n'
         for db in rdsl: ctx += '  - '+db.get('DBInstanceIdentifier','')+' ('+db.get('DBInstanceClass','')+', '+db.get('Engine','')+')\n'
     except: pass
     try:
-        cfl = boto3.client('cloudfront').list_distributions().get('DistributionList',{}).get('Items',[])
+        cfl = session.client('cloudfront').list_distributions().get('DistributionList',{}).get('Items',[])
         ctx += 'CloudFront Distributions ('+str(len(cfl))+'):\n'
         for cf2 in cfl: ctx += '  - '+cf2.get('Id','')+' ('+cf2.get('DomainName','')+')\n'
     except: pass
@@ -122,10 +131,38 @@ def handler(event, context):
             question = body.get('question', '').strip()
             if not question: return resp(400, {'error': 'question is required'})
             if len(question) > 1000: return resp(400, {'error': 'Question too long (max 1000 chars)'})
+
+            # Identify user from Cognito token
+            caller_email = ''
+            role_arn = None
+            try:
+                claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+                caller_email = claims.get('email', '')
+            except: pass
+
+            # Look up customer record to get their cross-account role
+            customer_id = 'system'
+            if caller_email:
+                try:
+                    cust_table = dynamodb.Table(os.environ['CUSTOMERS_TABLE'])
+                    cust_scan = cust_table.scan(FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(caller_email))
+                    if cust_scan['Items']:
+                        customer_id = cust_scan['Items'][0]['customerId']
+                        role_arn = cust_scan['Items'][0].get('roleArn', '')
+                        if not role_arn: role_arn = None
+                except: pass
+
             ctx = ''
             svc_sorted = []
+            # Fetch cost data (from customer's account if they have a role)
             try:
-                ce = boto3.client('ce')
+                if role_arn:
+                    import boto3 as b3
+                    sts = b3.client('sts')
+                    creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardChat')['Credentials']
+                    ce = b3.client('ce', aws_access_key_id=creds['AccessKeyId'], aws_secret_access_key=creds['SecretAccessKey'], aws_session_token=creds['SessionToken'])
+                else:
+                    ce = boto3.client('ce')
                 end = datetime.now().strftime('%Y-%m-%d')
                 start = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
                 svc = ce.get_cost_and_usage(TimePeriod={'Start':start,'End':end},Granularity='DAILY',Metrics=['UnblendedCost'],GroupBy=[{'Type':'DIMENSION','Key':'SERVICE'}])
@@ -135,21 +172,25 @@ def handler(event, context):
                         sn = g['Keys'][0]; cv = float(g['Metrics']['UnblendedCost']['Amount'])
                         svc_costs[sn] = svc_costs.get(sn, 0) + cv
                 svc_sorted = sorted(svc_costs.items(), key=lambda x: x[1], reverse=True)[:15]
-                ctx = 'AWS Cost Breakdown (Last 7 Days):\n'
+                ctx = 'AWS Cost Breakdown (Last 7 Days) for ' + customer_id + ':\n'
                 for sn, cv in svc_sorted: ctx += '  ' + sn + ': $' + str(round(cv, 2)) + '\n'
             except:
-                ctx = 'AWS Cost data: Not available (Cost Explorer may not be enabled)\n'
-            ctx += '\n' + cached('resources', 300, get_resource_inventory)
+                ctx = 'AWS Cost data: Not available\n'
+
+            # Fetch resources (from customer's account if they have a role, otherwise host account)
+            cache_key = 'resources_' + customer_id
+            ctx += '\n' + cached(cache_key, 300, lambda: get_resource_inventory(role_arn))
+
             bedrock = boto3.client('bedrock-runtime')
             model_id = os.environ['BEDROCK_MODEL_ID']
-            if 'titan' in model_id:
+            if 'nova' in model_id:
+                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'schemaVersion': 'messages-v1', 'system': [{'text': 'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources for customer ' + customer_id + '. Answer with specific resource names and IDs. Be concise and actionable.'}], 'messages': [{'role': 'user', 'content': [{'text': ctx + '\nUser Question: ' + question}]}], 'inferenceConfig': {'max_new_tokens': 500}}))
+                answer = json.loads(br['body'].read())['output']['message']['content'][0]['text']
+            elif 'titan' in model_id:
                 br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'inputText': ctx + '\nUser Question: ' + question, 'textGenerationConfig': {'maxTokenCount': 500, 'temperature': 0.7}}))
                 answer = json.loads(br['body'].read())['results'][0]['outputText']
-            elif 'nova' in model_id:
-                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'schemaVersion': 'messages-v1', 'system': [{'text': 'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources. Answer with specific resource names and IDs. Be concise and actionable.'}], 'messages': [{'role': 'user', 'content': [{'text': ctx + '\nUser Question: ' + question}]}], 'inferenceConfig': {'max_new_tokens': 500}}))
-                answer = json.loads(br['body'].read())['output']['message']['content'][0]['text']
             else:
-                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':500,'system':'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources. Answer with specific resource names and IDs. Be concise and actionable.','messages':[{'role':'user','content':ctx+'\nUser Question: '+question}]}))
+                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'anthropic_version':'bedrock-2023-05-31','max_tokens':500,'system':'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources for customer ' + customer_id + '. Answer with specific resource names and IDs. Be concise and actionable.','messages':[{'role':'user','content':ctx+'\nUser Question: '+question}]}))
                 answer = json.loads(br['body'].read())['content'][0]['text']
             return resp(200, {'answer': answer, 'cost_data': dict(svc_sorted)})
 
