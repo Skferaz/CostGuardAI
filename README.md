@@ -89,8 +89,8 @@ aws iam create-role --role-name CostGuardReadRole \
   --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<YOUR_ACCOUNT_ID>:role/costguard-lambda-role"},"Action":"sts:AssumeRole"}]}'
 
 aws iam put-role-policy --role-name CostGuardReadRole \
-  --policy-name CostExplorerRead \
-  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ce:GetCostAndUsage","ce:GetCostForecast"],"Resource":"*"}]}'
+  --policy-name CostGuardReadAccess \
+  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ce:GetCostAndUsage","ce:GetCostForecast","s3:ListAllMyBuckets","ec2:DescribeInstances","ec2:DescribeVolumes","lambda:ListFunctions","rds:DescribeDBInstances","dynamodb:ListTables","cloudfront:ListDistributions"],"Resource":"*"}]}'
 ```
 
 2. Customer pastes their Role ARN in the **Add Account** page on the dashboard
