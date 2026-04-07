@@ -149,6 +149,22 @@ def handler(event, context):
             return resp(200, {'message': 'Onboarded', 'customerId': cid})
 
         elif path == '/customers':
+            # Admin only
+            caller_email = ''
+            try:
+                claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+                caller_email = claims.get('email', '')
+                if not caller_email:
+                    auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header else ''
+                    if token and '.' in token:
+                        import base64
+                        payload = token.split('.')[1]
+                        payload += '=' * (4 - len(payload) % 4)
+                        caller_email = json.loads(base64.b64decode(payload)).get('email', '')
+            except: pass
+            if caller_email != os.environ.get('ADMIN_EMAIL', ''):
+                return resp(403, {'error': 'Admin access only'})
             r = dynamodb.Table(os.environ['CUSTOMERS_TABLE']).scan()
             return resp(200, {'customers': r['Items'], 'total': r['Count']})
 
