@@ -232,7 +232,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="nav-item" onclick="navigate('onboard')" id="nav-onboard">
    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg><span>Add Account</span>
   </div>
-  <div class="nav-item" onclick="navigate('customers')" id="nav-customers">
+  <div class="nav-item admin-only" onclick="navigate('customers')" id="nav-customers">
    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span>Customers</span>
   </div>
   <div class="nav-item" onclick="navigate('chat')" id="nav-chat">
@@ -334,7 +334,8 @@ async function signup(){const e=document.getElementById('signupEmail').value.tri
 async function verify(){const c=document.getElementById('verifyCode').value.trim();if(!c)return showMsg('Enter code','error');try{await cog('ConfirmSignUp',{ClientId:C.CLIENT_ID,Username:pendingEmail,ConfirmationCode:c});showMsg('Verified! Sign in now.','success');showLogin();document.getElementById('loginEmail').value=pendingEmail}catch(x){showMsg(x.message,'error')}}
 async function login(){const e=document.getElementById('loginEmail').value.trim(),p=document.getElementById('loginPass').value;if(!e||!p)return showMsg('Fill all fields','error');try{const d=await cog('InitiateAuth',{ClientId:C.CLIENT_ID,AuthFlow:'USER_PASSWORD_AUTH',AuthParameters:{USERNAME:e,PASSWORD:p}});currentUser={email:e,idToken:d.AuthenticationResult.IdToken};localStorage.setItem('cg_user',JSON.stringify(currentUser));showApp()}catch(x){showMsg(x.message,'error')}}
 function logout(){currentUser=null;localStorage.removeItem('cg_user');document.getElementById('appPage').classList.add('hidden');document.getElementById('authPage').classList.remove('hidden');showLogin()}
-function showApp(){document.getElementById('authPage').classList.add('hidden');document.getElementById('appPage').classList.remove('hidden');document.getElementById('userEmail').textContent=currentUser.email;navigate('dashboard')}
+const ADMIN_EMAIL='skferaz@gmail.com';
+function showApp(){document.getElementById('authPage').classList.add('hidden');document.getElementById('appPage').classList.remove('hidden');document.getElementById('userEmail').textContent=currentUser.email;const isAdmin=currentUser.email===ADMIN_EMAIL;document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=isAdmin?'':'none'});navigate('dashboard')}
 (function(){const s=localStorage.getItem('cg_user');if(s){currentUser=JSON.parse(s);showApp()}})();
 (function(){const p=document.getElementById('particles');if(p){for(let i=0;i<20;i++){const s=document.createElement('span');s.style.left=Math.random()*100+'%';s.style.animationDuration=(5+Math.random()*10)+'s';s.style.animationDelay=Math.random()*5+'s';s.style.width=s.style.height=(1+Math.random()*3)+'px';s.style.background=['#38bdf8','#818cf8','#c084fc','#34d399','#fb923c'][Math.floor(Math.random()*5)];p.appendChild(s)}}})();
 async function api(path){const r=await fetch(C.API+path,{headers:currentUser?{'Authorization':'Bearer '+currentUser.idToken}:{}});return r.json()}
