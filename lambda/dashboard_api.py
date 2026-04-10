@@ -212,6 +212,14 @@ def handler(event, context):
             if not customer_id:
                 return resp(200, {'answer': 'Welcome to CostGuard AI! To use the chatbot, please connect your AWS account first.\n\nGo to the **Add Account** page in the sidebar and follow the 3 simple steps to connect your AWS account. Once connected, I can analyze your costs, list your resources, and provide optimization recommendations.', 'cost_data': {}})
 
+            # For customers with roleArn, verify the role works
+            if role_arn and not is_admin:
+                try:
+                    sts_test = boto3.client('sts')
+                    sts_test.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardTest')['Credentials']
+                except:
+                    return resp(200, {'answer': 'Your AWS account is registered but I cannot access it yet. Please verify:\n\n1. The IAM role **CostGuardReadRole** exists in your AWS account\n2. The trust policy allows **arn:aws:iam::717279732828:role/costguard-lambda-role**\n3. The role has the required permissions (S3, EC2, Lambda, DynamoDB, RDS, CloudFront, Cost Explorer)\n\nGo to **Add Account** page for the exact commands to run.', 'cost_data': {}})
+
             ctx = ''
             svc_sorted = []
             # Fetch cost data (from customer's account if they have a role)
