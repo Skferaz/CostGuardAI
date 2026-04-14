@@ -108,6 +108,9 @@ def handler(event, context):
         if path == '/health':
             return resp(200, {'status': 'healthy', 'timestamp': datetime.now().isoformat()})
 
+        if method == 'OPTIONS':
+            return resp(200, {'message': 'ok'})
+
         elif path == '/dashboard':
             cid = params.get('customerId', 'system')
             limit = min(int(params.get('limit', '30')), 100)
