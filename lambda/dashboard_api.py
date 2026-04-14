@@ -148,7 +148,7 @@ def handler(event, context):
             dynamodb.Table(os.environ['CUSTOMERS_TABLE']).put_item(Item={'customerId': cid, 'email': email, 'roleArn': role_arn, 'plan': plan, 'createdAt': datetime.now().isoformat()})
             return resp(200, {'message': 'Onboarded', 'customerId': cid})
 
-        elif path == '/customers':
+        elif path == '/customers' and method == 'GET':
             # Admin only
             caller_email = ''
             try:
@@ -167,6 +167,39 @@ def handler(event, context):
                 return resp(403, {'error': 'Admin access only'})
             r = dynamodb.Table(os.environ['CUSTOMERS_TABLE']).scan()
             return resp(200, {'customers': r['Items'], 'total': r['Count']})
+
+        elif path == '/customers/delete' and method == 'POST':
+            # Admin only - delete customer and their data
+            caller_email = ''
+            try:
+                claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+                caller_email = claims.get('email', '')
+                if not caller_email:
+                    auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header else ''
+                    if token and '.' in token:
+                        import base64
+                        payload = token.split('.')[1]
+                        payload += '=' * (4 - len(payload) % 4)
+                        caller_email = json.loads(base64.b64decode(payload)).get('email', '')
+            except: pass
+            if caller_email != os.environ.get('ADMIN_EMAIL', ''):
+                return resp(403, {'error': 'Admin access only'})
+            body = json.loads(event.get('body', '{}'))
+            cid = body.get('customerId', '')
+            if not cid: return resp(400, {'error': 'customerId required'})
+            dynamodb.Table(os.environ['CUSTOMERS_TABLE']).delete_item(Key={'customerId': cid})
+            # Delete customer's cost data
+            costs_table = dynamodb.Table(os.environ['COSTS_TABLE'])
+            cost_items = costs_table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('customerId').eq(cid))['Items']
+            for item in cost_items:
+                costs_table.delete_item(Key={'customerId': cid, 'date': item['date']})
+            # Delete customer's alerts
+            alerts_table = dynamodb.Table(os.environ['ALERTS_TABLE'])
+            alert_items = alerts_table.scan(FilterExpression=boto3.dynamodb.conditions.Attr('customerId').eq(cid))['Items']
+            for item in alert_items:
+                alerts_table.delete_item(Key={'alertId': item['alertId']})
+            return resp(200, {'message': 'Customer ' + cid + ' removed successfully'})
 
         elif path == '/chat' and method == 'POST':
             body = json.loads(event.get('body', '{}'))
