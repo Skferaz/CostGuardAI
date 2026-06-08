@@ -19,6 +19,8 @@ Cognito (Auth) → DynamoDB (Data)
 - **Email Alerts** — Automated SES notifications on cost spikes
 - **Self-Service Onboarding** — Customers connect their AWS account via UI
 - **Serverless** — Fully serverless, pay-per-use architecture
+- **Razorpay Payments** — Subscription billing at ₹999/month with Standard Web Checkout
+- **Model Gating** — AI model access controlled by subscription tier (Haiku / Sonnet / Opus)
 
 ## Stack
 
@@ -33,6 +35,7 @@ Cognito (Auth) → DynamoDB (Data)
 | Alerts | SES |
 | Monitoring | CloudWatch Alarms |
 | IaC | CloudFormation |
+| Payments | Razorpay Standard Web Checkout |
 
 ## Deploy
 
@@ -95,16 +98,51 @@ aws iam put-role-policy --role-name CostGuardReadRole \
 
 2. Customer pastes their Role ARN in the **Add Account** page on the dashboard
 
+## Subscription Tiers & Model Gating
+
+| Plan | Price | Claude Model | Capability |
+|------|-------|-------------|------------|
+| **Free** | ₹0 | Claude 3 Haiku | Basic cost Q&A |
+| **Pro** | ₹999/month | Claude 3 Sonnet | Advanced analysis |
+| **Enterprise** | Custom | Claude 3 Opus | Maximum intelligence |
+
+Plan is enforced **server-side** — the backend always selects the model based on the user's DynamoDB `plan` field. The frontend model selector is UI-only.
+
+### Razorpay Payment Flow
+
+1. Free user clicks a locked model (Sonnet/Opus) → upgrade modal appears
+2. User clicks **Upgrade to Pro — ₹999/month**
+3. Backend `POST /create-order` creates a Razorpay order (server-side, credentials never reach browser)
+4. Razorpay Standard Checkout modal opens
+5. On payment success, `razorpay_payment_id`, `razorpay_order_id`, `razorpay_signature` sent to `POST /verify-payment`
+6. Backend verifies HMAC-SHA256 signature, upgrades `plan` to `pro` in DynamoDB
+7. Frontend updates plan badge to **Pro**, Sonnet unlocks
+
+### Testing Payments (Razorpay Test Mode)
+
+Use Razorpay test card:
+```
+Card number : 4111 1111 1111 1111
+Expiry      : Any future date
+CVV         : Any 3 digits
+```
+
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /dashboard | Cost data with AI analysis |
-| GET | /alerts | Cost spike alerts |
-| GET | /cost-summary | Aggregated spending summary |
-| POST | /onboard | Register new customer account |
-| GET | /customers | List connected accounts |
-| POST | /chat | AI chatbot — ask about costs & resources |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /health | None | Health check |
+| GET | /dashboard | JWT | Cost data with AI analysis |
+| GET | /alerts | JWT | Cost spike alerts |
+| GET | /cost-summary | JWT | Aggregated spending summary |
+| POST | /onboard | JWT | Register new customer account |
+| GET | /customers | JWT (admin) | List connected accounts |
+| POST | /customers/delete | JWT (admin) | Remove a customer |
+| POST | /chat | JWT | AI chatbot with live AWS context |
+| GET | /report | JWT | Monthly cost report |
+| GET | /subscription-status | JWT | Current plan + next billing date |
+| POST | /create-order | JWT | Create Razorpay payment order |
+| POST | /verify-payment | JWT | Verify signature + upgrade plan |
 
 ## AI Chatbot
 
@@ -123,15 +161,28 @@ It fetches real-time data from Cost Explorer + resource APIs (S3, EC2, Lambda, D
 ```
 ├── costguard-ai.json           # CloudFormation template (entire backend)
 ├── frontend/
-│   └── index.html              # Single-page dashboard app (mobile responsive)
+│   └── index.html              # Single-page dashboard (Razorpay checkout + model selector)
 ├── lambda/
-│   ├── cost_analyzer.py        # CostAnalyzer Lambda (readable version)
-│   └── dashboard_api.py        # Dashboard API + Chat Lambda (readable version)
+│   ├── cost_analyzer.py        # CostAnalyzer Lambda — daily cost analysis
+│   └── dashboard_api.py        # Dashboard API: chat, payments, model gating
+├── .env                        # Razorpay credentials (git-ignored)
 ├── docs/
 │   ├── ARCHITECTURE.md         # Architecture deep dive
 │   └── INTERVIEW_QA.md         # Interview questions & answers
 └── README.md
 ```
+
+## Environment Variables (Lambda)
+
+| Variable | Description |
+|----------|-------------|
+| `CUSTOMERS_TABLE` | DynamoDB customers table name |
+| `ALERTS_TABLE` | DynamoDB alerts table name |
+| `COSTS_TABLE` | DynamoDB costs table name |
+| `BEDROCK_MODEL_ID` | Fallback Bedrock model (overridden by plan gating) |
+| `ADMIN_EMAIL` | Admin user email for elevated access |
+| `RAZORPAY_KEY_ID` | Razorpay API key ID (test: `rzp_test_*`) |
+| `RAZORPAY_KEY_SECRET` | Razorpay secret — **backend only, never in frontend** |
 
 ## License
 
