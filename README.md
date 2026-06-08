@@ -1,189 +1,205 @@
 # 🛡️ CostGuard AI
 
-**AI-powered AWS cost intelligence platform** — Detects cost spikes, generates AI explanations using Amazon Bedrock, and sends automated alerts.
+**Enterprise-grade, AI-powered AWS Cost Intelligence Platform** — Monitors costs across multiple AWS accounts, detects anomalies, generates AI savings recommendations, forecasts spend, and enables self-service subscription billing. Built to compete with Cloudability, CloudHealth, and Spot.io.
+
+🔗 **Live Demo:** https://d3e1nh6uj1h44y.cloudfront.net
+
+---
+
+## What It Does
+
+| Capability | Details |
+|---|---|
+| **Real-time Cost Monitoring** | Daily cost analysis per AWS account via Cost Explorer |
+| **AI-Powered Chat** | Ask questions about your costs using Claude (Haiku 4.5 / Sonnet 4.5 / Opus 4.6) |
+| **Anomaly Detection** | Spike detection: flags any day where cost exceeds 7-day avg by >20% |
+| **Cost Forecasting** | 30-day spend projection with ±15% confidence band (client-side linear regression) |
+| **Savings Recommendations** | AI generates 5 actionable savings opportunities from live resource inventory |
+| **Budget Tracking** | Set monthly budgets per service, track actual vs budget with live progress bars |
+| **Service Drill-down** | Click any service in reports → see resource-level cost breakdown |
+| **Subscription Billing** | Razorpay Standard Checkout (₹999/mo Pro), server-side HMAC verification |
+| **Model Gating** | Plan-based AI model access enforced server-side |
+| **Multi-tenant SaaS** | Multiple AWS accounts via cross-account IAM roles |
+| **One-Click Onboarding** | CloudFormation quick-create link creates the IAM role automatically |
+| **Light/Dark Mode** | Full theme toggle persisted to localStorage |
+
+---
 
 ## Architecture
 
 ```
-CloudFront → S3 (Dashboard)
-API Gateway → Lambda (Dashboard API)
-EventBridge → Lambda (Cost Analyzer) → Cost Explorer + Bedrock + SES
-Cognito (Auth) → DynamoDB (Data)
+                    ┌─────────────────────────────────────────────────────┐
+                    │                   AWS Account                        │
+                    │                                                       │
+  User Browser ────►│  CloudFront ──► S3 (index.html)                    │
+                    │       │                                               │
+                    │       ▼                                               │
+                    │  API Gateway (11 routes)                             │
+                    │       │                                               │
+                    │       ▼                                               │
+                    │  Lambda: dashboard_api.py  ──► DynamoDB (4 tables)  │
+                    │       │                    ──► Bedrock (Claude AI)   │
+                    │       │                    ──► STS (cross-account)   │
+                    │       │                                               │
+                    │  Cognito (Auth)                                       │
+                    │                                                       │
+                    │  EventBridge (6 AM UTC daily)                        │
+                    │       │                                               │
+                    │       ▼                                               │
+                    │  Lambda: cost_analyzer.py  ──► Cost Explorer        │
+                    │                            ──► Bedrock               │
+                    │                            ──► SES (email alerts)   │
+                    └─────────────────────────────────────────────────────┘
+                                         │
+                    Customer AWS Account  │ STS AssumeRole
+                    ┌────────────────────▼────────────────┐
+                    │  CostGuardReadRole (read-only)       │
+                    │  Cost Explorer, EC2, S3, Lambda...   │
+                    └──────────────────────────────────────┘
 ```
 
-## Features
+---
 
-- **Multi-tenant SaaS** — Monitor costs across multiple AWS accounts
-- **AI Analysis** — Amazon Bedrock Claude generates cost insights and recommendations
-- **Spike Detection** — Compares daily cost vs 7-day average, alerts on >20% increase
-- **Email Alerts** — Automated SES notifications on cost spikes
-- **Self-Service Onboarding** — Customers connect their AWS account via UI
-- **Serverless** — Fully serverless, pay-per-use architecture
-- **Razorpay Payments** — Subscription billing at ₹999/month with Standard Web Checkout
-- **Model Gating** — AI model access controlled by subscription tier (Haiku / Sonnet / Opus)
+## Tech Stack
 
-## Stack
+| Layer | Technology | Why |
+|---|---|---|
+| Frontend | Vanilla JS SPA, ApexCharts 3.x | Zero build step, CDN charts |
+| Hosting | S3 + CloudFront (OAC) | Global CDN, private bucket, HTTPS |
+| Auth | Amazon Cognito | Managed JWT, email verification |
+| API | API Gateway + Lambda (Python 3.11) | Serverless, per-request billing |
+| AI | Amazon Bedrock (Claude Haiku 4.5 / Sonnet 4.5 / Opus 4.6) | Multi-model with plan gating |
+| Database | DynamoDB × 4 (PAY_PER_REQUEST) | Zero idle cost, single-ms latency |
+| Scheduling | EventBridge (daily cron) | Native AWS scheduling |
+| Alerts | SES | Managed transactional email |
+| Payments | Razorpay Standard Web Checkout | HMAC-SHA256 verified, server-side only |
+| IaC | CloudFormation (single template) | Entire backend in one deploy |
 
-| Component | Service |
-|-----------|---------|
-| Frontend | S3 + CloudFront |
-| Auth | Cognito |
-| API | API Gateway + Lambda (Python 3.11) |
-| AI | Amazon Bedrock (Claude Sonnet) |
-| Data | DynamoDB (3 tables) |
-| Scheduling | EventBridge (daily cron) |
-| Alerts | SES |
-| Monitoring | CloudWatch Alarms |
-| IaC | CloudFormation |
-| Payments | Razorpay Standard Web Checkout |
+---
 
-## Deploy
+## Subscription Tiers
 
-### Option 1: One-Click Setup (Recommended)
+| Plan | Price | Claude Model | Features |
+|---|---|---|---|
+| **Free** | ₹0/mo | Claude Haiku 4.5 | Dashboard, alerts, basic chat |
+| **Pro** | ₹999/mo | Claude Sonnet 4.5 | + Savings AI, advanced analysis |
+| **Enterprise** | Custom | Claude Opus 4.6 | + Full access, priority support |
 
-```bash
-git clone https://github.com/Skferaz/CostGuardAI.git
-cd CostGuardAI
-./setup.sh
+**Model selection is enforced server-side** — the Lambda reads the `plan` field from DynamoDB and picks the model. The frontend selector is UI-only; bypassing it changes nothing.
+
+---
+
+## API Reference
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/health` | None | Health check |
+| GET | `/dashboard` | JWT | Daily cost history + AI analysis |
+| GET | `/alerts` | JWT | Cost spike alerts |
+| GET | `/cost-summary` | JWT | Aggregated spend totals |
+| POST | `/chat` | JWT | AI chatbot with live AWS context |
+| GET | `/report` | JWT | Monthly cost + service breakdown |
+| GET | `/service-breakdown` | JWT | 30-day service costs (donut chart) |
+| GET | `/service-detail` | JWT | Resource-level cost drill-down |
+| GET | `/recommendations` | JWT | AI savings recommendations |
+| GET | `/budgets` | JWT | Budgets + actuals + % used |
+| POST | `/budgets` | JWT | Create/update a budget |
+| GET | `/subscription-status` | JWT | Current plan + billing date |
+| POST | `/create-order` | JWT | Create Razorpay order (server-side) |
+| POST | `/verify-payment` | JWT | HMAC verify + upgrade plan in DB |
+| POST | `/onboard` | JWT | Register new AWS account |
+| GET | `/customers` | JWT (admin) | List all connected accounts |
+| POST | `/customers/delete` | JWT (admin) | Remove customer + data |
+
+---
+
+## Payment Flow
+
+```
+Free user clicks locked model
+         ↓
+Upgrade modal (₹999/month)
+         ↓
+POST /create-order → Razorpay API → returns order_id
+         ↓
+Razorpay checkout.js modal opens
+         ↓
+User pays → razorpay_payment_id + razorpay_order_id + razorpay_signature
+         ↓
+POST /verify-payment
+  HMAC-SHA256(order_id|payment_id, KEY_SECRET) == razorpay_signature ?
+         ↓ yes
+DynamoDB update: plan = 'pro'
+         ↓
+Frontend badge: Free → Pro ✦, Sonnet unlocks
 ```
 
-The script will:
-1. Deploy all AWS infrastructure (CloudFormation)
-2. Package and deploy Lambda code
-3. Configure the frontend with your account's URLs
-4. Set up monitoring (SNS alarms, X-Ray, DLQ)
-5. Add health check endpoint
-6. Enable Cognito authentication on all APIs
-7. Verify your email for SES alerts
+**KEY_SECRET never touches the frontend** — returned only via `/create-order` response as `keyId` (public key only).
 
-Takes ~5 minutes. You just need to enter your email.
-
-### Option 2: Manual Deploy
-
-```bash
-aws cloudformation deploy \
-  --template-file costguard-ai.json \
-  --stack-name costguard-ai \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides \
-    BedrockModelId=anthropic.claude-3-sonnet-20240229-v1:0 \
-    AlertEmailAddress=your@email.com
-```
-
-Then upload the frontend:
-
-```bash
-BUCKET=$(aws cloudformation describe-stacks --stack-name costguard-ai --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text)
-
-aws s3 cp frontend/index.html s3://$BUCKET/index.html --content-type "text/html"
-```
-
-See `setup.sh` for the full list of post-deploy steps (Lambda code, auth, monitoring).
-
-### Moving to a Different AWS Account
-
-Just clone the repo and run `./setup.sh` in the new account — it handles everything automatically.
-
-## Onboarding a Customer
-
-1. Customer creates an IAM role in their account:
-```bash
-aws iam create-role --role-name CostGuardReadRole \
-  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<YOUR_ACCOUNT_ID>:role/costguard-lambda-role"},"Action":"sts:AssumeRole"}]}'
-
-aws iam put-role-policy --role-name CostGuardReadRole \
-  --policy-name CostGuardReadAccess \
-  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ce:GetCostAndUsage","ce:GetCostForecast","s3:ListAllMyBuckets","ec2:DescribeInstances","ec2:DescribeVolumes","lambda:ListFunctions","rds:DescribeDBInstances","dynamodb:ListTables","cloudfront:ListDistributions"],"Resource":"*"}]}'
-```
-
-2. Customer pastes their Role ARN in the **Add Account** page on the dashboard
-
-## Subscription Tiers & Model Gating
-
-| Plan | Price | Claude Model | Capability |
-|------|-------|-------------|------------|
-| **Free** | ₹0 | Claude 3 Haiku | Basic cost Q&A |
-| **Pro** | ₹999/month | Claude 3 Sonnet | Advanced analysis |
-| **Enterprise** | Custom | Claude 3 Opus | Maximum intelligence |
-
-Plan is enforced **server-side** — the backend always selects the model based on the user's DynamoDB `plan` field. The frontend model selector is UI-only.
-
-### Razorpay Payment Flow
-
-1. Free user clicks a locked model (Sonnet/Opus) → upgrade modal appears
-2. User clicks **Upgrade to Pro — ₹999/month**
-3. Backend `POST /create-order` creates a Razorpay order (server-side, credentials never reach browser)
-4. Razorpay Standard Checkout modal opens
-5. On payment success, `razorpay_payment_id`, `razorpay_order_id`, `razorpay_signature` sent to `POST /verify-payment`
-6. Backend verifies HMAC-SHA256 signature, upgrades `plan` to `pro` in DynamoDB
-7. Frontend updates plan badge to **Pro**, Sonnet unlocks
-
-### Testing Payments (Razorpay Test Mode)
-
-Use Razorpay test card:
-```
-Card number : 4111 1111 1111 1111
-Expiry      : Any future date
-CVV         : Any 3 digits
-```
-
-## API Endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /health | None | Health check |
-| GET | /dashboard | JWT | Cost data with AI analysis |
-| GET | /alerts | JWT | Cost spike alerts |
-| GET | /cost-summary | JWT | Aggregated spending summary |
-| POST | /onboard | JWT | Register new customer account |
-| GET | /customers | JWT (admin) | List connected accounts |
-| POST | /customers/delete | JWT (admin) | Remove a customer |
-| POST | /chat | JWT | AI chatbot with live AWS context |
-| GET | /report | JWT | Monthly cost report |
-| GET | /subscription-status | JWT | Current plan + next billing date |
-| POST | /create-order | JWT | Create Razorpay payment order |
-| POST | /verify-payment | JWT | Verify signature + upgrade plan |
-
-## AI Chatbot
-
-The built-in AI assistant has live access to your AWS account. Ask it:
-
-- "What S3 buckets exist in my account?"
-- "Which service is costing the most?"
-- "How many Lambda functions are running?"
-- "How can I reduce my AWS bill?"
-- "What EC2 instances are running?"
-
-It fetches real-time data from Cost Explorer + resource APIs (S3, EC2, Lambda, DynamoDB, RDS, CloudFront) and sends it to Bedrock Claude for intelligent answers.
+---
 
 ## Project Structure
 
 ```
-├── costguard-ai.json           # CloudFormation template (entire backend)
+CostGuardAI/
+├── costguard-ai.json              # CloudFormation — entire backend (28+ resources)
+├── costguard-role-template.json   # CF template for customer IAM role (one-click onboard)
 ├── frontend/
-│   └── index.html              # Single-page dashboard (Razorpay checkout + model selector)
+│   └── index.html                 # SPA: dashboard, charts, chat, billing, forecast, budgets
 ├── lambda/
-│   ├── cost_analyzer.py        # CostAnalyzer Lambda — daily cost analysis
-│   └── dashboard_api.py        # Dashboard API: chat, payments, model gating
-├── .env                        # Razorpay credentials (git-ignored)
+│   ├── dashboard_api.py           # Main API Lambda (17 routes, payments, AI, model gating)
+│   └── cost_analyzer.py           # Daily cron Lambda (CE → Bedrock → DynamoDB → SES)
+├── .env                           # Razorpay credentials (git-ignored)
 ├── docs/
-│   ├── ARCHITECTURE.md         # Architecture deep dive
-│   └── INTERVIEW_QA.md         # Interview questions & answers
+│   ├── ARCHITECTURE.md            # Deep-dive architecture decisions
+│   └── INTERVIEW_QA.md            # Interview prep Q&A
 └── README.md
 ```
+
+---
 
 ## Environment Variables (Lambda)
 
 | Variable | Description |
-|----------|-------------|
-| `CUSTOMERS_TABLE` | DynamoDB customers table name |
-| `ALERTS_TABLE` | DynamoDB alerts table name |
-| `COSTS_TABLE` | DynamoDB costs table name |
-| `BEDROCK_MODEL_ID` | Fallback Bedrock model (overridden by plan gating) |
-| `ADMIN_EMAIL` | Admin user email for elevated access |
-| `RAZORPAY_KEY_ID` | Razorpay API key ID (test: `rzp_test_*`) |
-| `RAZORPAY_KEY_SECRET` | Razorpay secret — **backend only, never in frontend** |
+|---|---|
+| `CUSTOMERS_TABLE` | DynamoDB customers table |
+| `ALERTS_TABLE` | DynamoDB alerts table |
+| `COSTS_TABLE` | DynamoDB daily costs table |
+| `BUDGETS_TABLE` | DynamoDB budgets table |
+| `BEDROCK_MODEL_ID` | Fallback model ID (overridden by plan gating) |
+| `ADMIN_EMAIL` | Admin email — gets enterprise plan + all features |
+| `RAZORPAY_KEY_ID` | Razorpay public key (returned to frontend) |
+| `RAZORPAY_KEY_SECRET` | Razorpay secret — **server-side only, never in frontend** |
+
+---
+
+## Deploy
+
+```bash
+# 1. Deploy infrastructure
+aws cloudformation deploy \
+  --template-file costguard-ai.json \
+  --stack-name costguard-ai \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides AlertEmailAddress=your@email.com
+
+# 2. Deploy Lambda code
+zip lambda.zip lambda/dashboard_api.py
+aws lambda update-function-code \
+  --function-name costguard-dashboard-api \
+  --zip-file fileb://lambda.zip
+
+# 3. Upload frontend
+aws s3 cp frontend/index.html s3://YOUR-BUCKET/index.html \
+  --content-type text/html --cache-control no-cache
+
+# 4. Invalidate CloudFront
+aws cloudfront create-invalidation \
+  --distribution-id YOUR-DIST-ID --paths "/*"
+```
+
+---
 
 ## License
 
-MIT
+MIT — built by Feraz Shaikh
