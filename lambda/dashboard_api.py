@@ -398,6 +398,233 @@ def handler(event, context):
             )
             return resp(200, {'message': 'Upgraded to Pro', 'plan': 'pro', 'nextBillingDate': next_billing})
 
+        elif path == '/recommendations' and method == 'GET':
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+
+            # Get customer info
+            customer_plan = 'enterprise' if is_admin else 'free'
+            role_arn = None
+            if not is_admin:
+                cust = get_customer_by_email(dynamodb, caller_email)
+                if not cust:
+                    return resp(200, {'recommendations': [], 'message': 'Connect your AWS account first'})
+                role_arn = cust.get('roleArn')
+                customer_plan = cust.get('plan', 'free')
+
+            # Fetch cost data
+            try:
+                if role_arn:
+                    sts = boto3.client('sts')
+                    creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardRecs')['Credentials']
+                    ce = boto3.client('ce', aws_access_key_id=creds['AccessKeyId'],
+                                     aws_secret_access_key=creds['SecretAccessKey'],
+                                     aws_session_token=creds['SessionToken'])
+                else:
+                    ce = boto3.client('ce')
+
+                end = datetime.now().strftime('%Y-%m-%d')
+                start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                svc = ce.get_cost_and_usage(
+                    TimePeriod={'Start': start, 'End': end},
+                    Granularity='MONTHLY', Metrics=['UnblendedCost'],
+                    GroupBy=[{'Type': 'DIMENSION', 'Key': 'SERVICE'}]
+                )
+                svc_costs = {}
+                for g in (svc['ResultsByTime'][0]['Groups'] if svc['ResultsByTime'] else []):
+                    cost = float(g['Metrics']['UnblendedCost']['Amount'])
+                    if cost > 0:
+                        svc_costs[g['Keys'][0]] = round(cost, 2)
+                cost_ctx = 'AWS 30-Day Costs by Service:\n' + '\n'.join(
+                    f'  {k}: ${v}' for k, v in sorted(svc_costs.items(), key=lambda x: x[1], reverse=True)[:10]
+                )
+            except Exception as e:
+                cost_ctx = f'Cost data unavailable: {str(e)[:100]}'
+
+            resource_ctx = get_resource_inventory(role_arn)
+
+            prompt = f"""You are an AWS cost optimization expert. Analyze this data and provide exactly 5 actionable savings recommendations.
+
+{cost_ctx}
+
+{resource_ctx}
+
+Return ONLY a valid JSON array (no other text, no markdown) with exactly 5 objects, each having:
+- "action": string (specific action to take)
+- "saving": number (estimated monthly USD saving, realistic estimate)
+- "effort": "Easy" or "Medium" or "Hard"
+- "resource": string (specific service, resource name, or "General")
+- "reason": string (one sentence explanation)
+
+Example format: [{{"action":"...", "saving":50, "effort":"Easy", "resource":"Amazon EC2", "reason":"..."}}]"""
+
+            try:
+                bedrock = boto3.client('bedrock-runtime')
+                model_id = get_model_for_plan(customer_plan)
+                br = bedrock.invoke_model(
+                    modelId=model_id,
+                    body=json.dumps({
+                        'anthropic_version': 'bedrock-2023-05-31',
+                        'max_tokens': 1500,
+                        'messages': [{'role': 'user', 'content': prompt}]
+                    })
+                )
+                raw = json.loads(br['body'].read())['content'][0]['text'].strip()
+                # Extract JSON array
+                match = re.search(r'\[[\s\S]*\]', raw)
+                recs = json.loads(match.group()) if match else []
+                # Validate and sanitize
+                clean_recs = []
+                for r in recs[:5]:
+                    clean_recs.append({
+                        'action': str(r.get('action', ''))[:200],
+                        'saving': float(r.get('saving', 0)),
+                        'effort': r.get('effort', 'Medium') if r.get('effort') in ['Easy','Medium','Hard'] else 'Medium',
+                        'resource': str(r.get('resource', 'General'))[:100],
+                        'reason': str(r.get('reason', ''))[:300]
+                    })
+                return resp(200, {'recommendations': clean_recs, 'generated_at': datetime.now().isoformat()})
+            except Exception as e:
+                return resp(500, {'error': f'Recommendations failed: {str(e)[:200]}'})
+
+        elif path == '/budgets' and method == 'GET':
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            cust = get_customer_by_email(dynamodb, caller_email) if not is_admin else None
+            customer_id = 'system' if is_admin else (cust['customerId'] if cust else None)
+            if not customer_id:
+                return resp(200, {'budgets': []})
+
+            budgets_table = dynamodb.Table(os.environ.get('BUDGETS_TABLE', 'costguard-budgets'))
+            try:
+                result = budgets_table.query(
+                    KeyConditionExpression=boto3.dynamodb.conditions.Key('customerId').eq(customer_id)
+                )
+                budgets = result['Items']
+
+                # Get actual costs for current month
+                now = datetime.now()
+                period = params.get('period', now.strftime('%Y-%m'))
+                import calendar
+                yr, mn = int(period.split('-')[0]), int(period.split('-')[1])
+                ms = f'{period}-01'
+                last_day = calendar.monthrange(yr, mn)[1]
+                me = f'{period}-{last_day:02d}'
+                today = now.strftime('%Y-%m-%d')
+                if me > today: me = today
+
+                # Fetch actual costs
+                role_arn = None if is_admin else (cust.get('roleArn') if cust else None)
+                try:
+                    if role_arn:
+                        sts = boto3.client('sts')
+                        creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardBudgets')['Credentials']
+                        ce = boto3.client('ce', aws_access_key_id=creds['AccessKeyId'],
+                                         aws_secret_access_key=creds['SecretAccessKey'],
+                                         aws_session_token=creds['SessionToken'])
+                    else:
+                        ce = boto3.client('ce')
+                    svc_data = ce.get_cost_and_usage(
+                        TimePeriod={'Start': ms, 'End': me},
+                        Granularity='MONTHLY', Metrics=['UnblendedCost'],
+                        GroupBy=[{'Type': 'DIMENSION', 'Key': 'SERVICE'}]
+                    )
+                    actuals = {}
+                    for g in (svc_data['ResultsByTime'][0]['Groups'] if svc_data['ResultsByTime'] else []):
+                        actuals[g['Keys'][0]] = float(g['Metrics']['UnblendedCost']['Amount'])
+                except:
+                    actuals = {}
+
+                enriched = []
+                for b in budgets:
+                    budget_amt = float(b.get('budget_amount', 0))
+                    actual = actuals.get(b.get('service', ''), 0.0)
+                    pct = (actual / budget_amt * 100) if budget_amt > 0 else 0
+                    enriched.append({
+                        'service': b.get('service', ''),
+                        'budget_amount': budget_amt,
+                        'actual_cost': round(actual, 2),
+                        'period': b.get('period', period),
+                        'pct_used': round(pct, 1)
+                    })
+                return resp(200, {'budgets': enriched, 'period': period})
+            except Exception as e:
+                return resp(500, {'error': str(e)})
+
+        elif path == '/budgets' and method == 'POST':
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            body = json.loads(event.get('body', '{}'))
+            service = body.get('service', '').strip()
+            budget_amount = float(body.get('budget_amount', 0))
+            period = body.get('period', datetime.now().strftime('%Y-%m'))
+
+            if not service or budget_amount <= 0:
+                return resp(400, {'error': 'service and budget_amount (>0) required'})
+
+            cust = get_customer_by_email(dynamodb, caller_email) if not is_admin else None
+            customer_id = 'system' if is_admin else (cust['customerId'] if cust else None)
+            if not customer_id:
+                return resp(404, {'error': 'Customer not found. Connect your AWS account first.'})
+
+            budgets_table = dynamodb.Table(os.environ.get('BUDGETS_TABLE', 'costguard-budgets'))
+            try:
+                budgets_table.put_item(Item={
+                    'customerId': customer_id,
+                    'service': service,
+                    'budget_amount': str(budget_amount),
+                    'period': period,
+                    'createdAt': datetime.now().isoformat()
+                })
+                return resp(200, {'message': 'Budget saved', 'service': service, 'budget_amount': budget_amount, 'period': period})
+            except Exception as e:
+                return resp(500, {'error': str(e)})
+
+        elif path == '/service-detail' and method == 'GET':
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            service = params.get('service', '').strip()
+            month = params.get('month', '')
+            if not service or not month or not re.match(r'^\d{4}-\d{2}$', month):
+                return resp(400, {'error': 'service and month (YYYY-MM) required'})
+
+            import calendar
+            yr, mn = int(month.split('-')[0]), int(month.split('-')[1])
+            ms = f'{month}-01'
+            last_day = calendar.monthrange(yr, mn)[1]
+            me = f'{month}-{last_day:02d}'
+            today = datetime.now().strftime('%Y-%m-%d')
+            if me > today: me = today
+
+            cust = get_customer_by_email(dynamodb, caller_email) if not is_admin else None
+            role_arn = None if is_admin else (cust.get('roleArn') if cust else None)
+
+            try:
+                if role_arn:
+                    sts = boto3.client('sts')
+                    creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardDetail')['Credentials']
+                    ce = boto3.client('ce', aws_access_key_id=creds['AccessKeyId'],
+                                     aws_secret_access_key=creds['SecretAccessKey'],
+                                     aws_session_token=creds['SessionToken'])
+                else:
+                    ce = boto3.client('ce')
+
+                result = ce.get_cost_and_usage(
+                    TimePeriod={'Start': ms, 'End': me},
+                    Granularity='MONTHLY', Metrics=['UnblendedCost'],
+                    GroupBy=[{'Type': 'DIMENSION', 'Key': 'RESOURCE_ID'}],
+                    Filter={'Dimensions': {'Key': 'SERVICE', 'Values': [service]}}
+                )
+                resources = []
+                for g in (result['ResultsByTime'][0]['Groups'] if result['ResultsByTime'] else []):
+                    cost = float(g['Metrics']['UnblendedCost']['Amount'])
+                    if cost > 0.001:
+                        resources.append({'resource_id': g['Keys'][0], 'cost': round(cost, 4)})
+                resources.sort(key=lambda x: x['cost'], reverse=True)
+                return resp(200, {'service': service, 'month': month, 'resources': resources[:50]})
+            except Exception as e:
+                return resp(500, {'error': f'Service detail failed: {str(e)[:200]}'})
+
         else:
             return resp(404, {'error': 'Not found'})
 
