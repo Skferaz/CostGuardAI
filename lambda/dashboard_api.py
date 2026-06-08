@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 from boto3.dynamodb.conditions import Key
 
 PLAN_MODELS = {
-    'free':       'anthropic.claude-3-5-haiku-20241022-v1:0',        # Claude 3.5 Haiku
-    'pro':        'anthropic.claude-3-sonnet-20240229-v1:0',          # Claude 3 Sonnet
-    'enterprise': 'anthropic.claude-sonnet-4-20250514-v1:0',          # Claude Sonnet 4 (latest)
+    'free':       'us.anthropic.claude-haiku-4-5-20251001-v1:0',      # Claude Haiku 4.5  (only confirmed-working model)
+    'pro':        'us.anthropic.claude-haiku-4-5-20251001-v1:0',      # Upgrade to Sonnet after enabling model access in Bedrock console
+    'enterprise': 'us.anthropic.claude-haiku-4-5-20251001-v1:0',      # Upgrade to Sonnet 4 after adding AWS payment method
 }
 
 def get_model_for_plan(plan):
