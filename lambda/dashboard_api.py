@@ -1,7 +1,21 @@
-import json, boto3, os, uuid, re, time, hashlib
+import json, boto3, os, uuid, re, time, hashlib, hmac, base64, urllib.request
 from decimal import Decimal
 from datetime import datetime, timedelta
 from boto3.dynamodb.conditions import Key
+
+PLAN_MODELS = {
+    'free':       'anthropic.claude-3-haiku-20240307-v1:0',
+    'pro':        'anthropic.claude-3-sonnet-20240229-v1:0',
+    'enterprise': 'anthropic.claude-3-opus-20240229-v1:0',
+}
+
+def get_model_for_plan(plan):
+    return PLAN_MODELS.get(plan, PLAN_MODELS['free'])
+
+def get_customer_by_email(dynamodb, email):
+    tbl = dynamodb.Table(os.environ['CUSTOMERS_TABLE'])
+    result = tbl.scan(FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(email))
+    return result['Items'][0] if result['Items'] else None
 
 HEADERS = {'Access-Control-Allow-Origin': os.environ.get('ALLOWED_ORIGIN','*'), 'Access-Control-Allow-Headers': 'Content-Type,Authorization', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'}
 _cache = {}
@@ -230,10 +244,12 @@ def handler(event, context):
             # Look up customer record
             customer_id = None
             is_admin = False
+            customer_plan = 'free'
             admin_email = os.environ.get('ADMIN_EMAIL', '')
             if caller_email and caller_email == admin_email:
                 is_admin = True
                 customer_id = 'system'
+                customer_plan = 'enterprise'
             elif caller_email:
                 try:
                     cust_table = dynamodb.Table(os.environ['CUSTOMERS_TABLE'])
@@ -241,6 +257,7 @@ def handler(event, context):
                     if cust_scan['Items']:
                         customer_id = cust_scan['Items'][0]['customerId']
                         role_arn = cust_scan['Items'][0].get('roleArn', '')
+                        customer_plan = cust_scan['Items'][0].get('plan', 'free')
                         if not role_arn: role_arn = None
                 except: pass
 
@@ -286,7 +303,7 @@ def handler(event, context):
             ctx += '\n' + cached(cache_key, 300, lambda: get_resource_inventory(role_arn))
 
             bedrock = boto3.client('bedrock-runtime')
-            model_id = os.environ['BEDROCK_MODEL_ID']
+            model_id = get_model_for_plan(customer_plan)
             if 'nova' in model_id:
                 br = bedrock.invoke_model(modelId=model_id, body=json.dumps({'schemaVersion': 'messages-v1', 'system': [{'text': 'You are CostGuard AI, an AWS cost optimization assistant. You have access to real AWS cost data AND a live inventory of AWS resources for customer ' + customer_id + '. Answer with specific resource names and IDs. Be concise and actionable.'}], 'messages': [{'role': 'user', 'content': [{'text': ctx + '\nUser Question: ' + question}]}], 'inferenceConfig': {'max_new_tokens': 500}}))
                 answer = json.loads(br['body'].read())['output']['message']['content'][0]['text']
@@ -323,6 +340,60 @@ def handler(event, context):
                 return resp(200, {'month':month,'total_cost':round(total,2),'avg_daily':round(avg,2),'peak_day':peak,'days':len(daily_data),'daily_costs':daily_data,'service_breakdown':svc_data})
             except Exception as e:
                 return resp(500, {'error': 'Cost Explorer may not be enabled. Enable it at https://console.aws.amazon.com/cost-management/home#/cost-explorer. Error: ' + str(e)})
+
+        elif path == '/subscription-status' and method == 'GET':
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            cust = get_customer_by_email(dynamodb, caller_email)
+            if not cust:
+                return resp(200, {'plan': 'free', 'nextBillingDate': None, 'email': caller_email})
+            return resp(200, {'plan': cust.get('plan', 'free'), 'nextBillingDate': cust.get('nextBillingDate', None), 'email': caller_email})
+
+        elif path == '/create-order' and method == 'POST':
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            key_id = os.environ.get('RAZORPAY_KEY_ID', '')
+            key_secret = os.environ.get('RAZORPAY_KEY_SECRET', '')
+            if not key_id or not key_secret:
+                return resp(500, {'error': 'Payment not configured'})
+            amount = 99900  # ₹999 in paise
+            credentials = base64.b64encode(f"{key_id}:{key_secret}".encode()).decode()
+            order_payload = json.dumps({
+                'amount': amount, 'currency': 'INR',
+                'receipt': f'rcpt_{int(time.time())}',
+                'notes': {'email': caller_email, 'plan': 'pro'}
+            }).encode()
+            req = urllib.request.Request(
+                'https://api.razorpay.com/v1/orders', data=order_payload,
+                headers={'Authorization': f'Basic {credentials}', 'Content-Type': 'application/json'},
+                method='POST'
+            )
+            with urllib.request.urlopen(req) as r:
+                order = json.loads(r.read())
+            return resp(200, {'orderId': order['id'], 'amount': amount, 'currency': 'INR', 'keyId': key_id})
+
+        elif path == '/verify-payment' and method == 'POST':
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            body = json.loads(event.get('body', '{}'))
+            order_id   = body.get('razorpay_order_id', '')
+            payment_id = body.get('razorpay_payment_id', '')
+            signature  = body.get('razorpay_signature', '')
+            key_secret = os.environ.get('RAZORPAY_KEY_SECRET', '')
+            expected = hmac.new(key_secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(expected, signature):
+                return resp(400, {'error': 'Payment verification failed'})
+            cust = get_customer_by_email(dynamodb, caller_email)
+            if not cust:
+                return resp(404, {'error': 'Customer not found'})
+            next_billing = (datetime.now() + timedelta(days=30)).isoformat()
+            dynamodb.Table(os.environ['CUSTOMERS_TABLE']).update_item(
+                Key={'customerId': cust['customerId']},
+                UpdateExpression='SET #p = :p, nextBillingDate = :nb, paymentId = :pid',
+                ExpressionAttributeNames={'#p': 'plan'},
+                ExpressionAttributeValues={':p': 'pro', ':nb': next_billing, ':pid': payment_id}
+            )
+            return resp(200, {'message': 'Upgraded to Pro', 'plan': 'pro', 'nextBillingDate': next_billing})
 
         else:
             return resp(404, {'error': 'Not found'})

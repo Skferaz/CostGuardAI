@@ -171,7 +171,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
  .step-box code{font-size:11px}
  .customer-card{flex-direction:column;align-items:flex-start;gap:8px}
 }
+.model-btn{padding:6px 14px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#94a3b8;font-size:12px;cursor:pointer;transition:all .2s}
+.model-btn.active{border-color:#38bdf8;color:#38bdf8;background:rgba(56,189,248,0.08)}
+.model-btn:hover{border-color:#475569;color:#cbd5e1}
 </style>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 <div id="authPage" class="auth-container">
@@ -242,6 +246,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>Reports</span>
   </div>
   <div class="sidebar-bottom">
+   <div id="planBadge" style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:#fff;margin-bottom:8px;background:#64748b">Free</div>
    <div class="user-info" id="userEmail"></div>
    <button class="logout-btn" onclick="logout()">Sign Out</button>
   </div>
@@ -290,6 +295,12 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostGuardRea
   <div id="view-chat" class="hidden">
    <h2 class="page-title">🤖 AI Cost Assistant</h2>
    <div class="chat-container">
+    <div id="modelSelectorRow" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+     <span style="font-size:12px;color:#64748b">Model:</span>
+     <button class="model-btn active" id="modelHaiku" onclick="selectModel('haiku')">Haiku (Free)</button>
+     <button class="model-btn" id="modelSonnet" onclick="selectModel('sonnet')">🔒 Sonnet (Pro)</button>
+     <button class="model-btn" id="modelOpus" onclick="selectModel('opus')">🔒 Opus (Enterprise)</button>
+    </div>
     <div class="chat-messages" id="chatMessages">
      <div class="chat-msg bot">Hi! I'm your CostGuard AI assistant. I can analyze your AWS costs in real-time. Try asking me:
 
@@ -320,7 +331,7 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostGuardRea
 </div>
 <script>
 const C={API:'https://s328a2zjc5.execute-api.us-east-1.amazonaws.com/prod',CLIENT_ID:'6mu4f31meoph10jdvr26c66r9a',REGION:'us-east-1'};
-let currentUser=null,pendingEmail=null;
+let currentUser=null,pendingEmail=null,currentPlan='free',selectedModel='haiku';
 function showMsg(t,type){const e=document.getElementById('authMsg');e.textContent=t;e.className='auth-msg '+type;e.classList.remove('hidden')}
 function showLogin(){document.getElementById('loginForm').classList.remove('hidden');document.getElementById('signupForm').classList.add('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('forgotForm').classList.add('hidden');document.getElementById('resetForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
 function showSignup(){document.getElementById('loginForm').classList.add('hidden');document.getElementById('signupForm').classList.remove('hidden');document.getElementById('verifyForm').classList.add('hidden');document.getElementById('forgotForm').classList.add('hidden');document.getElementById('resetForm').classList.add('hidden');document.getElementById('authMsg').classList.add('hidden')}
@@ -335,7 +346,8 @@ async function verify(){const c=document.getElementById('verifyCode').value.trim
 async function login(){const e=document.getElementById('loginEmail').value.trim(),p=document.getElementById('loginPass').value;if(!e||!p)return showMsg('Fill all fields','error');try{const d=await cog('InitiateAuth',{ClientId:C.CLIENT_ID,AuthFlow:'USER_PASSWORD_AUTH',AuthParameters:{USERNAME:e,PASSWORD:p}});currentUser={email:e,idToken:d.AuthenticationResult.IdToken};localStorage.setItem('cg_user',JSON.stringify(currentUser));showApp()}catch(x){showMsg(x.message,'error')}}
 function logout(){currentUser=null;localStorage.removeItem('cg_user');document.getElementById('appPage').classList.add('hidden');document.getElementById('authPage').classList.remove('hidden');showLogin()}
 const ADMIN_EMAIL='skferaz@gmail.com';
-function showApp(){document.getElementById('authPage').classList.add('hidden');document.getElementById('appPage').classList.remove('hidden');document.getElementById('userEmail').textContent=currentUser.email;const isAdmin=currentUser.email===ADMIN_EMAIL;document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=isAdmin?'':'none'});navigate('dashboard')}
+function updatePlanBadge(){const b=document.getElementById('planBadge');if(!b)return;const labels={free:'Free',pro:'Pro',enterprise:'Enterprise'},colors={free:'#64748b',pro:'#2563eb',enterprise:'#7c3aed'};b.textContent=labels[currentPlan]||'Free';b.style.background=colors[currentPlan]||'#64748b';const sonnet=document.getElementById('modelSonnet'),opus=document.getElementById('modelOpus');if(sonnet)sonnet.textContent=currentPlan==='pro'||currentPlan==='enterprise'?'Sonnet (Pro)':'🔒 Sonnet (Pro)';if(opus)opus.textContent=currentPlan==='enterprise'?'Opus (Enterprise)':'🔒 Opus (Enterprise)'}
+function showApp(){document.getElementById('authPage').classList.add('hidden');document.getElementById('appPage').classList.remove('hidden');document.getElementById('userEmail').textContent=currentUser.email;const isAdmin=currentUser.email===ADMIN_EMAIL;document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=isAdmin?'':'none'});api('/subscription-status').then(d=>{currentPlan=d.plan||'free';updatePlanBadge()}).catch(()=>{});navigate('dashboard')}
 (function(){const s=localStorage.getItem('cg_user');if(s){currentUser=JSON.parse(s);showApp()}})();
 (function(){const p=document.getElementById('particles');if(p){for(let i=0;i<20;i++){const s=document.createElement('span');s.style.left=Math.random()*100+'%';s.style.animationDuration=(5+Math.random()*10)+'s';s.style.animationDelay=Math.random()*5+'s';s.style.width=s.style.height=(1+Math.random()*3)+'px';s.style.background=['#38bdf8','#818cf8','#c084fc','#34d399','#fb923c'][Math.floor(Math.random()*5)];p.appendChild(s)}}})();
 async function api(path){const r=await fetch(C.API+path,{headers:currentUser?{'Authorization':'Bearer '+currentUser.idToken}:{}});return r.json()}
@@ -352,7 +364,26 @@ function mobileNav(p){navigate(p);document.querySelectorAll('.bottom-nav-item').
 let lastReport=null;
 async function loadReport(){const m=document.getElementById('reportMonth').value;if(!m){alert('Select a month');return}const s=document.getElementById('reportStats'),st=document.getElementById('reportServiceTable'),dt=document.getElementById('reportDailyTable');s.innerHTML='<div class="loader"><div class="spinner"></div></div>';st.innerHTML='';dt.innerHTML='';try{const d=await api('/report?month='+m);lastReport=d;document.getElementById('csvBtn').disabled=false;s.innerHTML=`<div class="stat-card"><div class="label">Total Cost</div><div class="value blue">$${(d.total_cost||0).toFixed(2)}</div></div><div class="stat-card"><div class="label">Daily Average</div><div class="value purple">$${(d.avg_daily||0).toFixed(2)}</div></div><div class="stat-card"><div class="label">Peak Day</div><div class="value red">${d.peak_day?d.peak_day.date:'N/A'} ($${d.peak_day?(d.peak_day.cost||0).toFixed(2):'0'})</div></div><div class="stat-card"><div class="label">Days in Report</div><div class="value green">${d.days||0}</div></div>`;const svcs=d.service_breakdown||[];if(svcs.length){st.innerHTML=`<table><thead><tr><th>Service</th><th>Cost</th><th>% of Total</th></tr></thead><tbody>${svcs.map(x=>`<tr><td>${x.service}</td><td>$${x.cost.toFixed(2)}</td><td>${d.total_cost>0?(x.cost/d.total_cost*100).toFixed(1):'0'}%</td></tr>`).join('')}</tbody></table>`}const days=d.daily_costs||[];if(days.length){dt.innerHTML=`<table><thead><tr><th>Date</th><th>Cost</th></tr></thead><tbody>${days.map(x=>`<tr><td>${x.date}</td><td>$${x.cost.toFixed(4)}</td></tr>`).join('')}</tbody></table>`}}catch(e){s.innerHTML=`<div class="stat-card"><div class="value red">${e.message}</div></div>`}}
 function downloadCSV(){if(!lastReport)return;let csv='CostGuard AI Monthly Report - '+lastReport.month+'\n\n';csv+='SUMMARY\nTotal Cost,$'+lastReport.total_cost+'\nDaily Average,$'+lastReport.avg_daily+'\nPeak Day,'+lastReport.peak_day.date+',$'+lastReport.peak_day.cost+'\nDays,'+lastReport.days+'\n\n';csv+='SERVICE BREAKDOWN\nService,Cost\n';(lastReport.service_breakdown||[]).forEach(s=>{csv+=s.service+',$'+s.cost+'\n'});csv+='\nDAILY COSTS\nDate,Cost\n';(lastReport.daily_costs||[]).forEach(d=>{csv+=d.date+',$'+d.cost+'\n'});const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='costguard-report-'+lastReport.month+'.csv';a.click();URL.revokeObjectURL(url)}
+function selectModel(model){const locked={sonnet:['pro','enterprise'],opus:['enterprise']};if(locked[model]&&!locked[model].includes(currentPlan)){showUpgradeModal();return}selectedModel=model;document.querySelectorAll('.model-btn').forEach(b=>b.classList.remove('active'));const id='model'+model.charAt(0).toUpperCase()+model.slice(1);document.getElementById(id).classList.add('active')}
+function showUpgradeModal(){document.getElementById('upgradeModal').style.display='flex'}
+function closeUpgradeModal(){document.getElementById('upgradeModal').style.display='none'}
+async function startPayment(){try{const order=await apiPost('/create-order',{});const options={key:order.keyId,amount:order.amount,currency:order.currency,name:'CostGuard AI',description:'Pro Plan - Rs.999/month',order_id:order.orderId,handler:async function(response){const verify=await apiPost('/verify-payment',response);if(verify.plan==='pro'){currentPlan='pro';updatePlanBadge();closeUpgradeModal();alert('You are now on Pro! Claude Sonnet is now active for your chats.')}else{alert('Payment could not be verified. Please contact support.')}},prefill:{email:currentUser?currentUser.email:''},theme:{color:'#7c3aed'}};const rzp=new Razorpay(options);rzp.on('payment.failed',function(resp){alert('Payment failed: '+resp.error.description)});rzp.open()}catch(e){alert('Error initiating payment: '+e.message)}}
 async function sendChat(){const input=document.getElementById('chatInput'),btn=document.getElementById('chatSendBtn'),msgs=document.getElementById('chatMessages');const q=input.value.trim();if(!q)return;input.value='';btn.disabled=true;msgs.innerHTML+=`<div class="chat-msg user">${q}</div>`;msgs.innerHTML+='<div class="chat-typing" id="typing">🤖 Analyzing your costs...</div>';msgs.scrollTop=msgs.scrollHeight;try{const d=await apiPost('/chat',{question:q});document.getElementById('typing')?.remove();let answer=d.answer||'Sorry, I could not process that.';if(d.cost_data){let tags=Object.entries(d.cost_data).map(([s,c])=>`<span class="cost-tag">${s}: $${c.toFixed(2)}</span>`).join('');answer=`<div style="margin-bottom:10px">${tags}</div>${answer}`}msgs.innerHTML+=`<div class="chat-msg bot">${answer}</div>`}catch(e){document.getElementById('typing')?.remove();msgs.innerHTML+=`<div class="chat-msg bot" style="border-color:#7f1d1d">Error: ${e.message}</div>`}btn.disabled=false;msgs.scrollTop=msgs.scrollHeight}
 </script>
+<div id="upgradeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;z-index:9999">
+ <div style="background:#1e293b;border:1px solid #6d28d9;border-radius:16px;padding:32px;max-width:420px;width:90%;text-align:center">
+  <div style="font-size:36px;margin-bottom:12px">🚀</div>
+  <h2 style="color:#c084fc;margin:0 0 8px">Upgrade to Pro</h2>
+  <p style="color:#94a3b8;font-size:14px;margin-bottom:8px">Unlock Claude Sonnet for deeper, faster AWS cost analysis.</p>
+  <div style="font-size:30px;font-weight:800;color:#38bdf8;margin:16px 0">&#8377;999<span style="font-size:14px;color:#64748b">/month</span></div>
+  <ul style="text-align:left;color:#94a3b8;font-size:13px;margin:0 0 20px;padding-left:20px">
+   <li>Claude Sonnet — smarter AWS cost insights</li>
+   <li>Priority support</li>
+   <li>Unlimited chat queries</li>
+  </ul>
+  <button onclick="startPayment()" style="width:100%;padding:14px;background:linear-gradient(135deg,#7c3aed,#2563eb);border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:10px">Upgrade to Pro — &#8377;999/month</button>
+  <button onclick="closeUpgradeModal()" style="width:100%;padding:10px;background:transparent;border:1px solid #334155;border-radius:10px;color:#94a3b8;cursor:pointer;font-size:14px">Maybe later</button>
+ </div>
+</div>
 </body>
 </html>
