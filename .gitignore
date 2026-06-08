@@ -4,3 +4,22 @@ __pycache__/
 .env
 .DS_Store
 /tmp/
+
+# Deployment helper scripts (contain credentials)
+lambda/add_routes.py
+lambda/check_report.py
+lambda/deploy_and_test.py
+lambda/deploy_breakdown.py
+lambda/find_working_model.py
+lambda/fix_apigw.py
+lambda/probe_models.py
+
+# Lambda build artifacts
+lambda/*.zip
+lambda/deploy.zip
+lambda/lambda*.zip
+
+# Environment files
+.env
+.env.*
+!.env.example
