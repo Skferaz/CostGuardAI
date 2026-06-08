@@ -297,9 +297,9 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostGuardRea
    <div class="chat-container">
     <div id="modelSelectorRow" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
      <span style="font-size:12px;color:#64748b">Model:</span>
-     <button class="model-btn active" id="modelHaiku" onclick="selectModel('haiku')">Haiku 3.5 (Free)</button>
-     <button class="model-btn" id="modelSonnet" onclick="selectModel('sonnet')">🔒 Sonnet 3 (Pro)</button>
-     <button class="model-btn" id="modelOpus" onclick="selectModel('opus')">🔒 Sonnet 4 (Enterprise)</button>
+     <button class="model-btn active" id="modelHaiku" onclick="selectModel('haiku')">Haiku 4.5 (Free)</button>
+     <button class="model-btn" id="modelSonnet" onclick="selectModel('sonnet')">🔒 Sonnet 4.5 (Pro)</button>
+     <button class="model-btn" id="modelOpus" onclick="selectModel('opus')">🔒 Opus 4.6 (Enterprise)</button>
     </div>
     <div class="chat-messages" id="chatMessages">
      <div class="chat-msg bot">Hi! I'm your CostGuard AI assistant. I can analyze your AWS costs in real-time. Try asking me:
@@ -346,7 +346,7 @@ async function verify(){const c=document.getElementById('verifyCode').value.trim
 async function login(){const e=document.getElementById('loginEmail').value.trim(),p=document.getElementById('loginPass').value;if(!e||!p)return showMsg('Fill all fields','error');try{const d=await cog('InitiateAuth',{ClientId:C.CLIENT_ID,AuthFlow:'USER_PASSWORD_AUTH',AuthParameters:{USERNAME:e,PASSWORD:p}});currentUser={email:e,idToken:d.AuthenticationResult.IdToken};localStorage.setItem('cg_user',JSON.stringify(currentUser));showApp()}catch(x){showMsg(x.message,'error')}}
 function logout(){currentUser=null;localStorage.removeItem('cg_user');document.getElementById('appPage').classList.add('hidden');document.getElementById('authPage').classList.remove('hidden');showLogin()}
 const ADMIN_EMAIL='skferaz@gmail.com';
-function updatePlanBadge(){const b=document.getElementById('planBadge');if(!b)return;const labels={free:'Free',pro:'Pro',enterprise:'Enterprise'},colors={free:'#64748b',pro:'#2563eb',enterprise:'#7c3aed'};b.textContent=labels[currentPlan]||'Free';b.style.background=colors[currentPlan]||'#64748b';const sonnet=document.getElementById('modelSonnet'),opus=document.getElementById('modelOpus');if(sonnet)sonnet.textContent=currentPlan==='pro'||currentPlan==='enterprise'?'Sonnet 3 (Pro)':'🔒 Sonnet 3 (Pro)';if(opus)opus.textContent=currentPlan==='enterprise'?'Sonnet 4 (Enterprise)':'🔒 Sonnet 4 (Enterprise)'}
+function updatePlanBadge(){const b=document.getElementById('planBadge');if(!b)return;const labels={free:'Free',pro:'Pro',enterprise:'Enterprise'},colors={free:'#64748b',pro:'#2563eb',enterprise:'#7c3aed'};b.textContent=labels[currentPlan]||'Free';b.style.background=colors[currentPlan]||'#64748b';const sonnet=document.getElementById('modelSonnet'),opus=document.getElementById('modelOpus');if(sonnet)sonnet.textContent=currentPlan==='pro'||currentPlan==='enterprise'?'Sonnet 4.5 (Pro)':'🔒 Sonnet 4.5 (Pro)';if(opus)opus.textContent=currentPlan==='enterprise'?'Opus 4.6 (Enterprise)':'🔒 Opus 4.6 (Enterprise)'}
 function showApp(){document.getElementById('authPage').classList.add('hidden');document.getElementById('appPage').classList.remove('hidden');document.getElementById('userEmail').textContent=currentUser.email;const isAdmin=currentUser.email===ADMIN_EMAIL;document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=isAdmin?'':'none'});if(isAdmin){currentPlan='enterprise';updatePlanBadge();navigate('dashboard')}else{api('/subscription-status').then(d=>{currentPlan=d.plan||'free';updatePlanBadge()}).catch(()=>{});navigate('dashboard')}}
 (function(){const s=localStorage.getItem('cg_user');if(s){currentUser=JSON.parse(s);showApp()}})();
 (function(){const p=document.getElementById('particles');if(p){for(let i=0;i<20;i++){const s=document.createElement('span');s.style.left=Math.random()*100+'%';s.style.animationDuration=(5+Math.random()*10)+'s';s.style.animationDelay=Math.random()*5+'s';s.style.width=s.style.height=(1+Math.random()*3)+'px';s.style.background=['#38bdf8','#818cf8','#c084fc','#34d399','#fb923c'][Math.floor(Math.random()*5)];p.appendChild(s)}}})();
