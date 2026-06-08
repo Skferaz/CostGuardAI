@@ -1,0 +1,47 @@
+﻿{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CostGuard AI - Read Access Role for cross-account cost monitoring",
+  "Resources": {
+    "CostGuardReadRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "CostGuardReadRole",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"AWS": "arn:aws:iam::717279732828:role/costguard-lambda-role"},
+            "Action": "sts:AssumeRole"
+          }]
+        },
+        "Policies": [{
+          "PolicyName": "CostGuardReadAccess",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Effect": "Allow",
+              "Action": [
+                "ce:GetCostAndUsage",
+                "ce:GetCostForecast",
+                "s3:ListAllMyBuckets",
+                "ec2:DescribeInstances",
+                "ec2:DescribeVolumes",
+                "lambda:ListFunctions",
+                "rds:DescribeDBInstances",
+                "dynamodb:ListTables",
+                "cloudfront:ListDistributions"
+              ],
+              "Resource": "*"
+            }]
+          }
+        }]
+      }
+    }
+  },
+  "Outputs": {
+    "RoleArn": {
+      "Value": {"Fn::GetAtt": ["CostGuardReadRole", "Arn"]},
+      "Description": "Paste this ARN into CostGuard AI to complete setup"
+    }
+  }
+}

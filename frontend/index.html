@@ -511,31 +511,139 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <!-- ADD ACCOUNT -->
   <div id="view-onboard" class="hidden">
    <h2 class="page-title">Connect AWS Account</h2>
-   <p class="page-subtitle">Follow these 3 steps to start monitoring your AWS costs</p>
-   <div class="step-box">
-    <h4>Step 1 — Create IAM Role in your AWS account</h4>
-    <p style="color:var(--text-muted);font-size:13px;margin-top:8px">Run this in your AWS account's CloudShell or CLI:</p>
-    <code>aws iam create-role --role-name CostGuardReadRole --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::717279732828:role/costguard-lambda-role"},"Action":"sts:AssumeRole"}]}'
+   <p class="page-subtitle">Grant CostGuard read-only access to your AWS account — choose your preferred method</p>
+
+   <!-- Method tabs -->
+   <div style="display:flex;gap:0;margin-bottom:28px;border:1px solid var(--border);border-radius:12px;overflow:hidden;max-width:480px">
+    <button id="tab-cfn" onclick="switchOnboardTab('cfn')" style="flex:1;padding:12px;background:var(--accent-cyan);color:#0f172a;font-size:13px;font-weight:700;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-Click <span style="background:#0f172a;color:#38bdf8;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:2px">RECOMMENDED</span>
+    </button>
+    <button id="tab-cli" onclick="switchOnboardTab('cli')" style="flex:1;padding:12px;background:var(--bg-card);color:var(--text-muted);font-size:13px;font-weight:600;border:none;border-left:1px solid var(--border);cursor:pointer">
+     &lt;/&gt; CLI Commands
+    </button>
+   </div>
+
+   <!-- ONE-CLICK TAB (CloudFormation) -->
+   <div id="onboard-cfn">
+
+    <!-- Step 1: Launch stack -->
+    <div style="display:flex;gap:20px;margin-bottom:20px;max-width:760px">
+     <div style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#38bdf8,#818cf8);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#0f172a">1</div>
+     <div style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:24px">
+      <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px">Create the IAM Role automatically</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.6">Click the button below — it opens AWS CloudFormation in your account with everything pre-filled. Just click <strong style="color:var(--text-primary)">Create Stack</strong>. The role is created in under 30 seconds.</div>
+      <a id="cfnLaunchBtn" href="https://console.aws.amazon.com/cloudformation/home#/stacks/quickcreate?templateURL=https%3A%2F%2Fd3e1nh6uj1h44y.cloudfront.net%2Fcostguard-role-template.json&stackName=CostGuardAccess" target="_blank" style="display:inline-flex;align-items:center;gap:10px;padding:14px 24px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-size:14px;font-weight:700;border-radius:10px;text-decoration:none;transition:opacity .2s;box-shadow:0 4px 14px rgba(245,158,11,.3)" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+       Launch in AWS CloudFormation
+      </a>
+      <div style="margin-top:14px;padding:12px 16px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.15);border-radius:8px;font-size:12px;color:var(--text-muted)">
+       <strong style="color:var(--accent-cyan)">What this creates:</strong> A read-only IAM role (<code style="color:#38bdf8">CostGuardReadRole</code>) that allows CostGuard to view your costs and resources. No write permissions. You can delete it anytime.
+      </div>
+     </div>
+    </div>
+
+    <!-- Step 2: Get ARN via account ID -->
+    <div style="display:flex;gap:20px;margin-bottom:20px;max-width:760px">
+     <div style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#818cf8,#c084fc);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#fff">2</div>
+     <div style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:24px">
+      <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px">Enter your AWS Account ID</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">Find it in the top-right of your AWS Console (12 digits). We'll auto-build the Role ARN for you.</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+       <div style="position:relative;flex:1;min-width:200px;max-width:300px">
+        <input type="text" id="obAccountId" placeholder="123456789012" maxlength="12"
+         oninput="buildArn(this.value)"
+         style="width:100%;padding:11px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;font-family:monospace;outline:none;transition:border-color .2s"
+         onfocus="this.style.borderColor='#38bdf8'" onblur="this.style.borderColor=''">
+       </div>
+       <div style="font-size:12px;color:var(--text-faint)">→ ARN:</div>
+       <div id="arnPreview" style="font-size:12px;color:var(--accent-cyan);font-family:monospace;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:10px 14px;flex:1;min-width:200px;word-break:break-all">arn:aws:iam::<span style="opacity:.4">123456789012</span>:role/CostGuardReadRole</div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--text-faint)">
+       Tip: Find your Account ID at <a href="https://console.aws.amazon.com/billing/home#/account" target="_blank" style="color:#38bdf8">AWS Billing</a> or top-right of AWS Console.
+      </div>
+     </div>
+    </div>
+
+    <!-- Step 3: Register -->
+    <div style="display:flex;gap:20px;max-width:760px">
+     <div style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#34d399,#059669);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#fff">3</div>
+     <div style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:24px">
+      <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:16px">Register your account</div>
+      <label style="font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Email address</label>
+      <input type="email" id="obEmail" style="width:100%;padding:11px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;margin:6px 0 14px;outline:none" onfocus="this.style.borderColor='#38bdf8'" onblur="this.style.borderColor=''">
+      <label style="font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">IAM Role ARN <span id="arnStatus" style="font-size:11px;margin-left:8px"></span></label>
+      <input type="text" id="obRoleArn" placeholder="arn:aws:iam::123456789012:role/CostGuardReadRole" style="width:100%;padding:11px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:13px;font-family:monospace;margin:6px 0 14px;outline:none" onfocus="this.style.borderColor='#38bdf8'" onblur="this.style.borderColor=''">
+      <label style="font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Plan</label>
+      <div style="display:flex;gap:10px;margin:6px 0 20px;flex-wrap:wrap">
+       <label id="plan-free" onclick="selectPlan('free')" style="flex:1;min-width:120px;padding:12px;border:2px solid var(--accent-cyan);border-radius:10px;cursor:pointer;text-align:center;background:rgba(56,189,248,.06)">
+        <div style="font-size:16px">🆓</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-top:4px">Free</div>
+        <div style="font-size:11px;color:var(--text-muted)">Haiku 4.5 · Basic</div>
+       </label>
+       <label id="plan-pro" onclick="selectPlan('pro')" style="flex:1;min-width:120px;padding:12px;border:2px solid var(--border);border-radius:10px;cursor:pointer;text-align:center">
+        <div style="font-size:16px">⭐</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-top:4px">Pro</div>
+        <div style="font-size:11px;color:var(--text-muted)">Sonnet 4.5 · ₹999/mo</div>
+       </label>
+       <label id="plan-enterprise" onclick="selectPlan('enterprise')" style="flex:1;min-width:120px;padding:12px;border:2px solid var(--border);border-radius:10px;cursor:pointer;text-align:center">
+        <div style="font-size:16px">🏢</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-top:4px">Enterprise</div>
+        <div style="font-size:11px;color:var(--text-muted)">Opus 4.6 · Custom</div>
+       </label>
+       <input type="hidden" id="obPlan" value="free">
+      </div>
+      <button onclick="onboard()" style="width:100%;padding:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s" onmouseover="this.style.opacity='.9'" onmouseout="this.style.opacity='1'">
+       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+       Connect Account &amp; Start Monitoring
+      </button>
+      <div id="onboardMsg" style="margin-top:12px;font-size:13px"></div>
+     </div>
+    </div>
+
+   </div><!-- /onboard-cfn -->
+
+   <!-- CLI TAB -->
+   <div id="onboard-cli" class="hidden" style="max-width:760px">
+    <div style="padding:14px 18px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);border-radius:10px;margin-bottom:20px;font-size:13px;color:var(--text-muted)">
+     <strong style="color:#fb923c">Heads up:</strong> The One-Click method above is faster and less error-prone. Use CLI only if you prefer the command line.
+    </div>
+
+    <div class="step-box" style="margin-bottom:16px">
+     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="color:var(--text-primary);font-size:14px;font-weight:700">Step 1 — Create IAM Role</h4>
+      <button onclick="copyCode('cli-cmd1','copy-btn1')" id="copy-btn1" style="padding:5px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-muted);font-size:11px;font-weight:600;cursor:pointer;transition:all .2s">Copy</button>
+     </div>
+     <p style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Run in AWS CloudShell or your terminal:</p>
+     <code id="cli-cmd1" style="display:block;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:11px;color:var(--accent-cyan);overflow-x:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6">aws iam create-role --role-name CostGuardReadRole --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::717279732828:role/costguard-lambda-role"},"Action":"sts:AssumeRole"}]}'
 
 aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostGuardReadAccess --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ce:GetCostAndUsage","ce:GetCostForecast","s3:ListAllMyBuckets","ec2:DescribeInstances","ec2:DescribeVolumes","lambda:ListFunctions","rds:DescribeDBInstances","dynamodb:ListTables","cloudfront:ListDistributions"],"Resource":"*"}]}'</code>
-   </div>
-   <div class="step-box">
-    <h4>Step 2 — Get your Role ARN</h4>
-    <code>aws iam get-role --role-name CostGuardReadRole --query 'Role.Arn' --output text</code>
-    <p style="color:var(--text-muted);font-size:13px;margin-top:8px">It looks like: arn:aws:iam::123456789012:role/CostGuardReadRole</p>
-   </div>
-   <div class="onboard-form">
-    <h3>Step 3 — Register your account</h3>
-    <p>Paste your Role ARN below and we'll start monitoring your costs.</p>
-    <label>Email</label><input type="email" id="obEmail" placeholder="your@email.com">
-    <label>IAM Role ARN</label><input type="text" id="obRoleArn" placeholder="arn:aws:iam::123456789012:role/CostGuardReadRole">
-    <label>Plan</label>
-    <select id="obPlan" style="width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;margin-bottom:16px">
-     <option value="free">Free</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option>
-    </select>
-    <button class="btn" onclick="onboard()">Connect Account</button>
-    <div id="onboardMsg"></div>
-   </div>
+    </div>
+
+    <div class="step-box" style="margin-bottom:16px">
+     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="color:var(--text-primary);font-size:14px;font-weight:700">Step 2 — Get your Role ARN</h4>
+      <button onclick="copyCode('cli-cmd2','copy-btn2')" id="copy-btn2" style="padding:5px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-muted);font-size:11px;font-weight:600;cursor:pointer;transition:all .2s">Copy</button>
+     </div>
+     <code id="cli-cmd2" style="display:block;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:11px;color:var(--accent-cyan);overflow-x:auto;white-space:pre;line-height:1.6">aws iam get-role --role-name CostGuardReadRole --query 'Role.Arn' --output text</code>
+     <p style="color:var(--text-muted);font-size:12px;margin-top:8px">Returns: <code style="color:#38bdf8;font-size:11px">arn:aws:iam::123456789012:role/CostGuardReadRole</code></p>
+    </div>
+
+    <div class="onboard-form" style="max-width:100%">
+     <h3>Step 3 — Register your account</h3>
+     <p>Paste your Role ARN below to complete the connection.</p>
+     <label>Email</label>
+     <input type="email" id="obEmail2" placeholder="your@email.com" style="margin-bottom:14px">
+     <label>IAM Role ARN</label>
+     <input type="text" id="obRoleArn2" placeholder="arn:aws:iam::123456789012:role/CostGuardReadRole" style="font-family:monospace;font-size:13px;margin-bottom:14px">
+     <label>Plan</label>
+     <select id="obPlan2" style="width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;margin-bottom:16px;appearance:none">
+      <option value="free">Free — Haiku 4.5</option><option value="pro">Pro — Sonnet 4.5 (₹999/mo)</option><option value="enterprise">Enterprise — Opus 4.6</option>
+     </select>
+     <button class="btn" onclick="onboardCli()">Connect Account</button>
+     <div id="onboardMsg2" style="margin-top:12px;font-size:13px"></div>
+    </div>
+   </div><!-- /onboard-cli -->
+
   </div>
 
   <!-- CUSTOMERS (admin) -->
@@ -713,6 +821,7 @@ function navigate(p){
   else if(p==='forecast')loadForecast();
   else if(p==='savings')loadSavings();
   else if(p==='budgets')loadBudgets();
+  else if(p==='onboard'){initOnboardPage();switchOnboardTab('cfn');}
 }
 function switchAccount(){selectedAccountId=document.getElementById('accountSelect').value;loadDashboard();}
 function toggleSidebar(){const s=document.getElementById('sidebar'),o=document.getElementById('mobileOverlay');s.classList.toggle('open');o.classList.toggle('show');}
@@ -1025,12 +1134,100 @@ async function loadCustomers(){
 async function deleteCustomer(cid){if(!confirm('Remove customer '+cid+'? This will delete all their data.'))return;try{await apiPost('/customers/delete',{customerId:cid});loadCustomers();}catch(e){alert('Error: '+e.message);}}
 
 // ── ONBOARD ───────────────────────────────────────────────────────────────────
+// Tab switching
+function switchOnboardTab(tab){
+  const cfn=document.getElementById('onboard-cfn'),cli=document.getElementById('onboard-cli');
+  const tbCfn=document.getElementById('tab-cfn'),tbCli=document.getElementById('tab-cli');
+  if(tab==='cfn'){
+    cfn.classList.remove('hidden');cli.classList.add('hidden');
+    tbCfn.style.background='var(--accent-cyan)';tbCfn.style.color='#0f172a';
+    tbCli.style.background='var(--bg-card)';tbCli.style.color='var(--text-muted)';
+  } else {
+    cli.classList.remove('hidden');cfn.classList.add('hidden');
+    tbCli.style.background='var(--accent-cyan)';tbCli.style.color='#0f172a';
+    tbCfn.style.background='var(--bg-card)';tbCfn.style.color='var(--text-muted)';
+  }
+}
+
+// Auto-build ARN from account ID
+function buildArn(accountId){
+  const clean=accountId.replace(/\D/g,'').slice(0,12);
+  document.getElementById('obAccountId').value=clean;
+  const arn=clean?`arn:aws:iam::${clean}:role/CostGuardReadRole`:'arn:aws:iam::123456789012:role/CostGuardReadRole';
+  const preview=document.getElementById('arnPreview');
+  const status=document.getElementById('arnStatus');
+  const arnInput=document.getElementById('obRoleArn');
+  preview.innerHTML=clean.length===12
+    ?`<span style="color:#34d399">${arn}</span>`
+    :`arn:aws:iam::<span style="opacity:.4">${clean||'123456789012'}</span><span style="opacity:.4">:role/CostGuardReadRole</span>`;
+  if(clean.length===12){
+    arnInput.value=arn;
+    if(status)status.innerHTML='<span style="color:#34d399">✓ auto-filled</span>';
+  } else {
+    arnInput.value='';
+    if(status)status.innerHTML=`<span style="color:var(--text-faint)">${clean.length}/12 digits</span>`;
+  }
+}
+
+// Plan card selection
+function selectPlan(plan){
+  ['free','pro','enterprise'].forEach(p=>{
+    const el=document.getElementById('plan-'+p);
+    if(el){el.style.border=p===plan?'2px solid var(--accent-cyan)':'2px solid var(--border)';el.style.background=p===plan?'rgba(56,189,248,.06)':'';}
+  });
+  document.getElementById('obPlan').value=plan;
+}
+
+// Copy code snippet
+function copyCode(elementId, btnId){
+  const text=document.getElementById(elementId).textContent;
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn=document.getElementById(btnId);
+    if(btn){btn.textContent='Copied!';btn.style.color='var(--accent-green)';setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);}
+  }).catch(()=>alert(text));
+}
+
+// Pre-fill email when navigating to Add Account
+function initOnboardPage(){
+  const emailEl=document.getElementById('obEmail');
+  const emailEl2=document.getElementById('obEmail2');
+  if(currentUser){
+    if(emailEl)emailEl.value=currentUser.email;
+    if(emailEl2)emailEl2.value=currentUser.email;
+  }
+}
+
+// Main onboard (One-Click tab)
 async function onboard(){
-  const email=document.getElementById('obEmail').value.trim(),roleArn=document.getElementById('obRoleArn').value.trim(),plan=document.getElementById('obPlan').value,msg=document.getElementById('onboardMsg');
+  const email=document.getElementById('obEmail').value.trim();
+  const roleArn=document.getElementById('obRoleArn').value.trim();
+  const plan=document.getElementById('obPlan').value||'free';
+  const msg=document.getElementById('onboardMsg');
+  if(!email){msg.innerHTML='<div style="padding:10px 14px;background:rgba(127,29,29,.5);color:#fca5a5;border-radius:8px">Please enter your email address</div>';return;}
+  if(!roleArn||!roleArn.startsWith('arn:aws:iam::')){msg.innerHTML='<div style="padding:10px 14px;background:rgba(127,29,29,.5);color:#fca5a5;border-radius:8px">Please enter a valid IAM Role ARN (or enter your Account ID above to auto-fill)</div>';return;}
+  msg.innerHTML='<div style="padding:10px 14px;background:rgba(30,58,95,.5);color:#38bdf8;border-radius:8px;display:flex;align-items:center;gap:8px"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Connecting your AWS account...</div>';
+  try{
+    const d=await apiPost('/onboard',{email,roleArn,plan});
+    msg.innerHTML=`<div style="padding:14px 18px;background:rgba(20,83,45,.5);color:#86efac;border-radius:10px;border:1px solid rgba(34,197,94,.3)"><div style="font-weight:700;margin-bottom:4px">Account connected successfully!</div><div style="font-size:12px;opacity:.9">Customer ID: ${d.customerId}<br>First cost analysis will run tomorrow at 6 AM UTC.</div></div>`;
+    document.getElementById('obAccountId').value='';
+    document.getElementById('obRoleArn').value='';
+    const p=document.getElementById('arnPreview');if(p)p.innerHTML='arn:aws:iam::<span style="opacity:.4">123456789012</span>:role/CostGuardReadRole';
+  }catch(e){msg.innerHTML=`<div style="padding:10px 14px;background:rgba(127,29,29,.5);color:#fca5a5;border-radius:8px">${e.message}</div>`;}
+}
+
+// CLI tab onboard (separate fields)
+async function onboardCli(){
+  const email=document.getElementById('obEmail2').value.trim();
+  const roleArn=document.getElementById('obRoleArn2').value.trim();
+  const plan=document.getElementById('obPlan2').value||'free';
+  const msg=document.getElementById('onboardMsg2');
   if(!email||!roleArn){msg.innerHTML='<div class="onboard-msg error">Email and Role ARN are required</div>';return;}
   msg.innerHTML='<div class="onboard-msg" style="background:rgba(30,58,95,.5);color:#38bdf8">Connecting...</div>';
-  try{const d=await apiPost('/onboard',{email,roleArn,plan});msg.innerHTML=`<div class="onboard-msg success">✅ Connected! Customer ID: ${d.customerId}<br>Cost analysis runs daily at 6 AM UTC.</div>`;document.getElementById('obEmail').value='';document.getElementById('obRoleArn').value='';}
-  catch(e){msg.innerHTML=`<div class="onboard-msg error">${e.message}</div>`;}
+  try{
+    const d=await apiPost('/onboard',{email,roleArn,plan});
+    msg.innerHTML=`<div class="onboard-msg success">Connected! Customer ID: ${d.customerId}. Cost analysis runs daily at 6 AM UTC.</div>`;
+    document.getElementById('obEmail2').value='';document.getElementById('obRoleArn2').value='';
+  }catch(e){msg.innerHTML=`<div class="onboard-msg error">${e.message}</div>`;}
 }
 
 // ── REPORTS ───────────────────────────────────────────────────────────────────
