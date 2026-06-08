@@ -341,6 +341,48 @@ def handler(event, context):
             except Exception as e:
                 return resp(500, {'error': 'Cost Explorer may not be enabled. Enable it at https://console.aws.amazon.com/cost-management/home#/cost-explorer. Error: ' + str(e)})
 
+        elif path == '/service-breakdown' and method == 'GET':
+            # Returns last-30-day service breakdown using customer's cross-account role
+            # This is what powers the donut chart on the dashboard
+            customer_plan = 'enterprise' if is_admin else 'free'
+            role_arn = None
+            if not is_admin and caller_email:
+                cust = get_customer_by_email(dynamodb, caller_email)
+                if cust:
+                    role_arn = cust.get('roleArn')
+                    customer_plan = cust.get('plan', 'free')
+            try:
+                if role_arn:
+                    sts = boto3.client('sts')
+                    creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardDonut')['Credentials']
+                    ce = boto3.client('ce', aws_access_key_id=creds['AccessKeyId'],
+                                     aws_secret_access_key=creds['SecretAccessKey'],
+                                     aws_session_token=creds['SessionToken'])
+                else:
+                    ce = boto3.client('ce')
+                end = datetime.now().strftime('%Y-%m-%d')
+                start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                svc = ce.get_cost_and_usage(
+                    TimePeriod={'Start': start, 'End': end},
+                    Granularity='MONTHLY', Metrics=['UnblendedCost'],
+                    GroupBy=[{'Type': 'DIMENSION', 'Key': 'SERVICE'}]
+                )
+                items = []
+                for period in svc['ResultsByTime']:
+                    for g in period.get('Groups', []):
+                        cost = float(g['Metrics']['UnblendedCost']['Amount'])
+                        if cost > 0.001:
+                            items.append({'service': g['Keys'][0], 'cost': round(cost, 2)})
+                # Merge duplicates (across periods)
+                merged = {}
+                for x in items:
+                    merged[x['service']] = merged.get(x['service'], 0) + x['cost']
+                result = sorted([{'service': k, 'cost': round(v, 2)} for k, v in merged.items()],
+                                key=lambda x: x['cost'], reverse=True)[:10]
+                return resp(200, {'services': result, 'period_days': 30})
+            except Exception as e:
+                return resp(200, {'services': [], 'error': str(e)[:200]})
+
         elif path == '/subscription-status' and method == 'GET':
             if not caller_email:
                 return resp(401, {'error': 'Authentication required'})

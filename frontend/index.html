@@ -787,12 +787,17 @@ async function loadDashboard(){
     });
     chartTrend.render();
 
-    // Service donut — fetch current month report
-    const nowMonth=new Date().toISOString().slice(0,7);
-    api('/report?month='+nowMonth).then(r=>{
-      const svcs=(r.service_breakdown||[]).slice(0,10).filter(x=>x.cost>0);
-      if(!svcs.length||!document.getElementById('chartDonut'))return;
-      chartDonut=new ApexCharts(document.getElementById('chartDonut'),{
+    // Service donut — use /service-breakdown which queries via customer cross-account role
+    api('/service-breakdown').then(r=>{
+      const svcs=(r.services||[]).filter(x=>x.cost>0);
+      const el=document.getElementById('chartDonut');
+      if(!el)return;
+      if(!svcs.length){
+        el.innerHTML='<div style="padding:30px;text-align:center;font-size:13px;color:var(--text-muted)">No service data available yet.<br><span style="font-size:11px;color:var(--text-faint)">Cost Explorer data appears after 24h</span></div>';
+        return;
+      }
+      if(chartDonut){try{chartDonut.destroy();}catch(e){}chartDonut=null;}
+      chartDonut=new ApexCharts(el,{
         chart:{type:'donut',height:240,background:'transparent',toolbar:{show:false}},
         theme:{mode:currentTheme},
         series:svcs.map(x=>x.cost),
@@ -801,11 +806,16 @@ async function loadDashboard(){
         legend:{position:'bottom',fontSize:'11px',labels:{colors:currentTheme==='dark'?'#94a3b8':'#475569'}},
         dataLabels:{enabled:false},
         stroke:{width:0},
-        plotOptions:{pie:{donut:{size:'65%',labels:{show:true,total:{show:true,label:'Total',formatter:()=>'$'+svcs.reduce((a,x)=>a+x.cost,0).toFixed(0),color:currentTheme==='dark'?'#e2e8f0':'#0f172a'}}}}},
+        plotOptions:{pie:{donut:{size:'65%',labels:{show:true,total:{show:true,label:'30-Day Total',
+          formatter:()=>'$'+svcs.reduce((a,x)=>a+x.cost,0).toFixed(0),
+          color:currentTheme==='dark'?'#e2e8f0':'#0f172a'}}}}},
         tooltip:{theme:currentTheme,y:{formatter:v=>'$'+v.toFixed(2)}}
       });
       chartDonut.render();
-    }).catch(()=>{});
+    }).catch(()=>{
+      const el=document.getElementById('chartDonut');
+      if(el)el.innerHTML='<div style="padding:30px;text-align:center;font-size:13px;color:var(--text-muted)">Service data unavailable</div>';
+    });
 
     // AI analysis
     if(latest.ai_analysis)ai.innerHTML=`<div class="ai-card"><h3>🤖 AI Analysis</h3><p>${latest.ai_analysis}</p></div>`;
