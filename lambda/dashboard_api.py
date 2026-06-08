@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 from boto3.dynamodb.conditions import Key
 
 PLAN_MODELS = {
-    'free':       'anthropic.claude-3-haiku-20240307-v1:0',
-    'pro':        'anthropic.claude-3-sonnet-20240229-v1:0',
-    'enterprise': 'anthropic.claude-3-opus-20240229-v1:0',
+    'free':       'anthropic.claude-3-5-haiku-20241022-v1:0',        # Claude 3.5 Haiku
+    'pro':        'anthropic.claude-3-sonnet-20240229-v1:0',          # Claude 3 Sonnet
+    'enterprise': 'anthropic.claude-sonnet-4-20250514-v1:0',          # Claude Sonnet 4 (latest)
 }
 
 def get_model_for_plan(plan):
@@ -344,6 +344,9 @@ def handler(event, context):
         elif path == '/subscription-status' and method == 'GET':
             if not caller_email:
                 return resp(401, {'error': 'Authentication required'})
+            # Admin always gets enterprise — no DynamoDB record needed
+            if is_admin:
+                return resp(200, {'plan': 'enterprise', 'nextBillingDate': None, 'email': caller_email, 'isAdmin': True})
             cust = get_customer_by_email(dynamodb, caller_email)
             if not cust:
                 return resp(200, {'plan': 'free', 'nextBillingDate': None, 'email': caller_email})
