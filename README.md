@@ -202,4 +202,4 @@ aws cloudfront create-invalidation \
 
 ## License
 
-MIT — built by Feraz Shaikh
+MIT — built by Shaikh Feraz
