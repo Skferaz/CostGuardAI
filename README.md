@@ -214,4 +214,4 @@ aws cloudfront create-invalidation --distribution-id YOUR-DIST-ID --paths "/*"
 
 ## License
 
-MIT — built by Shaikh Feraz
+MIT — built by Shaikh Feraz (skferaz@gmail.com)
