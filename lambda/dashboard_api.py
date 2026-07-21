@@ -5,8 +5,8 @@ from boto3.dynamodb.conditions import Key
 
 PLAN_MODELS = {
     'free':       'us.anthropic.claude-haiku-4-5-20251001-v1:0',      # Claude Haiku 4.5
-    'pro':        'us.anthropic.claude-sonnet-4-5-20250929-v1:0',     # Claude Sonnet 4.5
-    'enterprise': 'us.anthropic.claude-opus-4-6-v1',                  # Claude Opus 4.6
+    'pro':        'us.anthropic.claude-sonnet-4-6',                   # Claude Sonnet 4.6
+    'enterprise': 'us.anthropic.claude-opus-4-6-v1',                  # Claude Opus 4.6 (newest Opus with Bedrock access)
 }
 
 def get_model_for_plan(plan):
@@ -36,6 +36,81 @@ def resp(code, body):
 
 def validate_arn(arn):
     return bool(re.match(r'^arn:aws:iam::\d{12}:role/.+$', arn))
+
+# ── JWT verification (Cognito RS256, no external deps) ─────────────────────────
+def _b64url_decode(s):
+    return base64.urlsafe_b64decode(s + '=' * (-len(s) % 4))
+
+_SHA256_DIGESTINFO = bytes.fromhex('3031300d060960864801650304020105000420')
+
+def _rsa_pkcs1v15_sha256_verify(n, e, message, signature):
+    """Verify an RSA PKCS#1 v1.5 (SHA-256) signature using only big-int math."""
+    s = int.from_bytes(signature, 'big')
+    if s >= n:
+        return False
+    k = (n.bit_length() + 7) // 8
+    em = pow(s, e, n).to_bytes(k, 'big')
+    t = _SHA256_DIGESTINFO + hashlib.sha256(message).digest()
+    if k < len(t) + 11:
+        return False
+    expected = b'\x00\x01' + b'\xff' * (k - len(t) - 3) + b'\x00' + t
+    return hmac.compare_digest(em, expected)
+
+def _get_jwks():
+    region = os.environ.get('AWS_REGION', 'us-east-1')
+    pool = os.environ.get('COGNITO_USER_POOL_ID', '')
+    url = 'https://cognito-idp.%s.amazonaws.com/%s/.well-known/jwks.json' % (region, pool)
+    def fetch():
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return json.loads(r.read())
+    return cached('jwks_' + pool, 3600, fetch)
+
+def verify_cognito_jwt(token):
+    """Verify a Cognito RS256 JWT: signature, expiry, issuer, and audience/client_id.
+    Returns the claims dict on success, or None. Never trust an unverified token."""
+    pool = os.environ.get('COGNITO_USER_POOL_ID', '')
+    client = os.environ.get('COGNITO_APP_CLIENT_ID', '')
+    if not pool or not token or token.count('.') != 2:
+        return None
+    try:
+        h_b64, p_b64, s_b64 = token.split('.')
+        header = json.loads(_b64url_decode(h_b64))
+        if header.get('alg') != 'RS256' or 'kid' not in header:
+            return None
+        key = next((k for k in _get_jwks().get('keys', []) if k.get('kid') == header['kid']), None)
+        if not key:
+            return None
+        n = int.from_bytes(_b64url_decode(key['n']), 'big')
+        e = int.from_bytes(_b64url_decode(key['e']), 'big')
+        if not _rsa_pkcs1v15_sha256_verify(n, e, (h_b64 + '.' + p_b64).encode('ascii'), _b64url_decode(s_b64)):
+            return None
+        claims = json.loads(_b64url_decode(p_b64))
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        if claims.get('iss') != 'https://cognito-idp.%s.amazonaws.com/%s' % (region, pool):
+            return None
+        if float(claims.get('exp', 0)) < time.time():
+            return None
+        tu = claims.get('token_use')
+        if tu == 'id' and claims.get('aud') != client:
+            return None
+        if tu == 'access' and claims.get('client_id') != client:
+            return None
+        return claims
+    except Exception:
+        return None
+
+def get_caller_email(event):
+    """Return a cryptographically verified caller email, or '' if unauthenticated/invalid.
+    Trusts API Gateway authorizer claims when present (verified upstream); otherwise
+    verifies the Bearer token signature against Cognito JWKS in-Lambda."""
+    claims = (event.get('requestContext', {}).get('authorizer', {}) or {}).get('claims', {}) or {}
+    if claims.get('email'):
+        return claims.get('email', '')
+    hdrs = event.get('headers', {}) or {}
+    auth = hdrs.get('Authorization', '') or hdrs.get('authorization', '')
+    token = auth[7:].strip() if auth.startswith('Bearer ') else auth.strip()
+    verified = verify_cognito_jwt(token) if token else None
+    return verified.get('email', '') if verified else ''
 
 def get_resource_inventory(role_arn=None):
     ctx = ''
@@ -86,6 +161,125 @@ def get_resource_inventory(role_arn=None):
     except: pass
     return ctx
 
+SEV_ORDER = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+SENSITIVE_PORTS = {22: 'SSH', 3389: 'RDP', 3306: 'MySQL', 5432: 'PostgreSQL',
+                   1433: 'MSSQL', 27017: 'MongoDB', 6379: 'Redis', 9200: 'Elasticsearch', 5601: 'Kibana'}
+
+def _sess_for(role_arn):
+    if role_arn:
+        sts = boto3.client('sts')
+        creds = sts.assume_role(RoleArn=role_arn, RoleSessionName='CostGuardSecScan')['Credentials']
+        return boto3.Session(aws_access_key_id=creds['AccessKeyId'], aws_secret_access_key=creds['SecretAccessKey'], aws_session_token=creds['SessionToken'])
+    return boto3.Session()
+
+def run_security_scan(role_arn=None):
+    """Deterministic misconfiguration checks against the target account.
+    Returns a list of findings: {id, severity, service, resource, title, reason, remediation}."""
+    findings = []
+    try:
+        session = _sess_for(role_arn)
+    except Exception as e:
+        return [{'id': 'scan-error', 'severity': 'HIGH', 'service': 'IAM', 'resource': 'AssumeRole',
+                 'title': 'Unable to access account', 'reason': 'Could not assume the customer role: ' + str(e)[:150],
+                 'remediation': 'Verify the cross-account IAM role ARN and trust policy are configured correctly on the Add Account page.'}]
+
+    # --- S3: public access + encryption ---
+    try:
+        s3 = session.client('s3')
+        for b in s3.list_buckets().get('Buckets', []):
+            name = b.get('Name', '')
+            try:
+                pab = s3.get_public_access_block(Bucket=name)['PublicAccessBlockConfiguration']
+                if not all([pab.get('BlockPublicAcls'), pab.get('IgnorePublicAcls'), pab.get('BlockPublicPolicy'), pab.get('RestrictPublicBuckets')]):
+                    findings.append({'id': 's3-pab-' + name, 'severity': 'HIGH', 'service': 'Amazon S3', 'resource': name,
+                        'title': 'S3 bucket not fully blocking public access',
+                        'reason': 'One or more S3 Block Public Access settings are disabled, so a bucket ACL or policy could expose objects to the internet.',
+                        'remediation': 'Enable all four Block Public Access settings: aws s3api put-public-access-block --bucket ' + name + ' --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true'})
+            except Exception:
+                findings.append({'id': 's3-pab-' + name, 'severity': 'MEDIUM', 'service': 'Amazon S3', 'resource': name,
+                    'title': 'S3 Block Public Access not configured',
+                    'reason': 'No Block Public Access configuration is set on this bucket, leaving public exposure controlled only by ACLs/policies.',
+                    'remediation': 'Enable Block Public Access: aws s3api put-public-access-block --bucket ' + name + ' --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true'})
+            try:
+                s3.get_bucket_encryption(Bucket=name)
+            except Exception:
+                findings.append({'id': 's3-enc-' + name, 'severity': 'MEDIUM', 'service': 'Amazon S3', 'resource': name,
+                    'title': 'S3 bucket has no default encryption',
+                    'reason': 'Default server-side encryption is not enabled, so newly uploaded objects may be stored unencrypted at rest.',
+                    'remediation': 'Enable default SSE: aws s3api put-bucket-encryption --bucket ' + name + " --server-side-encryption-configuration '{\"Rules\":[{\"ApplyServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]}'"})
+    except Exception: pass
+
+    # --- EC2 security groups open to the world ---
+    try:
+        ec2 = session.client('ec2')
+        for sg in ec2.describe_security_groups()['SecurityGroups']:
+            sgid = sg.get('GroupId', '')
+            for perm in sg.get('IpPermissions', []):
+                open_v4 = any(r.get('CidrIp') == '0.0.0.0/0' for r in perm.get('IpRanges', []))
+                open_v6 = any(r.get('CidrIpv6') == '::/0' for r in perm.get('Ipv6Ranges', []))
+                if not (open_v4 or open_v6):
+                    continue
+                proto = perm.get('IpProtocol', '-1')
+                if proto == '-1':
+                    findings.append({'id': 'sg-all-' + sgid, 'severity': 'CRITICAL', 'service': 'Amazon EC2', 'resource': sgid,
+                        'title': 'Security group allows ALL traffic from the internet',
+                        'reason': 'This security group permits every port/protocol from 0.0.0.0/0, exposing all attached resources to the entire internet.',
+                        'remediation': 'Remove the open rule and restrict to known CIDRs: aws ec2 revoke-security-group-ingress --group-id ' + sgid + ' --protocol -1 --cidr 0.0.0.0/0'})
+                    continue
+                frm, to = perm.get('FromPort'), perm.get('ToPort')
+                for port, svc_name in SENSITIVE_PORTS.items():
+                    if frm is not None and to is not None and frm <= port <= to:
+                        sev = 'CRITICAL' if port in (22, 3389) else 'HIGH'
+                        findings.append({'id': 'sg-' + str(port) + '-' + sgid, 'severity': sev, 'service': 'Amazon EC2', 'resource': sgid,
+                            'title': svc_name + ' (port ' + str(port) + ') open to the internet',
+                            'reason': svc_name + ' is reachable from 0.0.0.0/0, a common target for brute-force and exploitation attacks.',
+                            'remediation': 'Restrict ingress to trusted IPs: aws ec2 revoke-security-group-ingress --group-id ' + sgid + ' --protocol tcp --port ' + str(port) + ' --cidr 0.0.0.0/0, then re-add with your office/VPN CIDR.'})
+    except Exception: pass
+
+    # --- EBS unencrypted volumes ---
+    try:
+        for v in ec2.describe_volumes()['Volumes']:
+            if not v.get('Encrypted'):
+                vid = v.get('VolumeId', '')
+                findings.append({'id': 'ebs-' + vid, 'severity': 'MEDIUM', 'service': 'Amazon EBS', 'resource': vid,
+                    'title': 'Unencrypted EBS volume',
+                    'reason': 'This volume is not encrypted at rest, so a snapshot or disk compromise could expose data in plaintext.',
+                    'remediation': 'Snapshot the volume, copy the snapshot with --encrypted, create a new volume from it, and swap it in. Enable EBS encryption by default: aws ec2 enable-ebs-encryption-by-default'})
+    except Exception: pass
+
+    # --- RDS public / unencrypted ---
+    try:
+        for db in session.client('rds').describe_db_instances()['DBInstances']:
+            dbid = db.get('DBInstanceIdentifier', '')
+            if db.get('PubliclyAccessible'):
+                findings.append({'id': 'rds-pub-' + dbid, 'severity': 'CRITICAL', 'service': 'Amazon RDS', 'resource': dbid,
+                    'title': 'RDS instance is publicly accessible',
+                    'reason': 'The database has a public endpoint reachable from the internet, dramatically widening the attack surface.',
+                    'remediation': 'Disable public access: aws rds modify-db-instance --db-instance-identifier ' + dbid + ' --no-publicly-accessible --apply-immediately, and place it in private subnets.'})
+            if not db.get('StorageEncrypted'):
+                findings.append({'id': 'rds-enc-' + dbid, 'severity': 'HIGH', 'service': 'Amazon RDS', 'resource': dbid,
+                    'title': 'RDS storage is not encrypted',
+                    'reason': 'Storage encryption is disabled, so data at rest and automated backups are stored unencrypted.',
+                    'remediation': 'Encryption cannot be enabled in place. Take a snapshot, copy it with --kms-key-id, and restore a new encrypted instance from the encrypted snapshot.'})
+    except Exception: pass
+
+    # --- IAM users without MFA ---
+    try:
+        iam = session.client('iam')
+        for u in iam.list_users()['Users']:
+            uname = u.get('UserName', '')
+            try:
+                if not iam.list_mfa_devices(UserName=uname)['MFADevices']:
+                    findings.append({'id': 'iam-mfa-' + uname, 'severity': 'HIGH', 'service': 'AWS IAM', 'resource': uname,
+                        'title': 'IAM user without MFA',
+                        'reason': 'This IAM user has no MFA device, so a leaked password alone is enough to compromise the account.',
+                        'remediation': 'Enforce MFA for the user and attach an IAM policy that denies actions unless aws:MultiFactorAuthPresent is true.'})
+            except Exception: pass
+    except Exception: pass
+
+    findings.sort(key=lambda f: SEV_ORDER.get(f['severity'], 9))
+    return findings
+
 def handler(event, context):
     dynamodb = boto3.resource('dynamodb')
     path = event.get('path', '')
@@ -93,21 +287,8 @@ def handler(event, context):
     params = event.get('queryStringParameters') or {}
 
     try:
-        # Extract caller email from JWT
-        caller_email = ''
-        try:
-            claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-            caller_email = claims.get('email', '')
-            if not caller_email:
-                auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
-                token = auth_header.replace('Bearer ', '') if auth_header else ''
-                if token and '.' in token:
-                    import base64
-                    payload = token.split('.')[1]
-                    payload += '=' * (4 - len(payload) % 4)
-                    decoded = json.loads(base64.b64decode(payload))
-                    caller_email = decoded.get('email', '')
-        except: pass
+        # Extract + cryptographically verify caller email from the Cognito JWT
+        caller_email = get_caller_email(event)
 
         admin_email = os.environ.get('ADMIN_EMAIL', '')
         is_admin = caller_email and caller_email == admin_email
@@ -167,40 +348,16 @@ def handler(event, context):
 
         elif path == '/customers' and method == 'GET':
             # Admin only
-            caller_email = ''
-            try:
-                claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-                caller_email = claims.get('email', '')
-                if not caller_email:
-                    auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
-                    token = auth_header.replace('Bearer ', '') if auth_header else ''
-                    if token and '.' in token:
-                        import base64
-                        payload = token.split('.')[1]
-                        payload += '=' * (4 - len(payload) % 4)
-                        caller_email = json.loads(base64.b64decode(payload)).get('email', '')
-            except: pass
-            if caller_email != os.environ.get('ADMIN_EMAIL', ''):
+            caller_email = get_caller_email(event)
+            if not caller_email or caller_email != os.environ.get('ADMIN_EMAIL', ''):
                 return resp(403, {'error': 'Admin access only'})
             r = dynamodb.Table(os.environ['CUSTOMERS_TABLE']).scan()
             return resp(200, {'customers': r['Items'], 'total': r['Count']})
 
         elif path == '/customers/delete' and method == 'POST':
             # Admin only - delete customer and their data
-            caller_email = ''
-            try:
-                claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-                caller_email = claims.get('email', '')
-                if not caller_email:
-                    auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
-                    token = auth_header.replace('Bearer ', '') if auth_header else ''
-                    if token and '.' in token:
-                        import base64
-                        payload = token.split('.')[1]
-                        payload += '=' * (4 - len(payload) % 4)
-                        caller_email = json.loads(base64.b64decode(payload)).get('email', '')
-            except: pass
-            if caller_email != os.environ.get('ADMIN_EMAIL', ''):
+            caller_email = get_caller_email(event)
+            if not caller_email or caller_email != os.environ.get('ADMIN_EMAIL', ''):
                 return resp(403, {'error': 'Admin access only'})
             body = json.loads(event.get('body', '{}'))
             cid = body.get('customerId', '')
@@ -224,22 +381,9 @@ def handler(event, context):
             if not question: return resp(400, {'error': 'question is required'})
             if len(question) > 1000: return resp(400, {'error': 'Question too long (max 1000 chars)'})
 
-            # Identify user from Cognito token
-            caller_email = ''
+            # Identify user from the verified Cognito token
+            caller_email = get_caller_email(event)
             role_arn = None
-            try:
-                claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-                caller_email = claims.get('email', '')
-                if not caller_email:
-                    auth_header = event.get('headers', {}).get('Authorization', '') or event.get('headers', {}).get('authorization', '')
-                    token = auth_header.replace('Bearer ', '')
-                    if token:
-                        import base64
-                        payload = token.split('.')[1]
-                        payload += '=' * (4 - len(payload) % 4)
-                        decoded = json.loads(base64.b64decode(payload))
-                        caller_email = decoded.get('email', '')
-            except: pass
 
             # Look up customer record
             customer_id = None
@@ -371,7 +515,7 @@ def handler(event, context):
                 for period in svc['ResultsByTime']:
                     for g in period.get('Groups', []):
                         cost = float(g['Metrics']['UnblendedCost']['Amount'])
-                        if cost > 0.001:
+                        if cost > 0:
                             items.append({'service': g['Keys'][0], 'cost': round(cost, 2)})
                 # Merge duplicates (across periods)
                 merged = {}
@@ -382,6 +526,59 @@ def handler(event, context):
                 return resp(200, {'services': result, 'period_days': 30})
             except Exception as e:
                 return resp(200, {'services': [], 'error': str(e)[:200]})
+
+        elif path == '/security-scan' and method == 'GET':
+            # Scans the target account for security misconfigurations (auth required)
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            role_arn = None
+            if not is_admin:
+                cust = get_customer_by_email(dynamodb, caller_email)
+                role_arn = cust.get('roleArn') if cust else None
+                if not role_arn:
+                    # Non-admin without a connected account must not scan the host account
+                    return resp(200, {'findings': [], 'counts': {}, 'message': 'Connect your AWS account to run a security scan.'})
+            try:
+                findings = cached('secscan_' + (role_arn or 'system'), 300, lambda: run_security_scan(role_arn))
+                counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+                for f in findings:
+                    counts[f['severity']] = counts.get(f['severity'], 0) + 1
+                return resp(200, {'findings': findings, 'counts': counts, 'scanned_at': datetime.now().isoformat()})
+            except Exception as e:
+                return resp(200, {'findings': [], 'counts': {}, 'error': str(e)[:200]})
+
+        elif path == '/security-remediate' and method == 'POST':
+            # AI-generated, step-by-step remediation for a single finding (auth required)
+            if not caller_email:
+                return resp(401, {'error': 'Authentication required'})
+            body = json.loads(event.get('body') or '{}')
+            finding = body.get('finding') or {}
+            customer_plan = 'enterprise' if is_admin else 'free'
+            if not is_admin and caller_email:
+                cust = get_customer_by_email(dynamodb, caller_email)
+                if cust:
+                    customer_plan = cust.get('plan', 'free')
+            prompt = ('You are an AWS security engineer. A vulnerability scan found this misconfiguration:\n\n'
+                      'Service: ' + str(finding.get('service', '')) + '\n'
+                      'Resource: ' + str(finding.get('resource', '')) + '\n'
+                      'Severity: ' + str(finding.get('severity', '')) + '\n'
+                      'Issue: ' + str(finding.get('title', '')) + '\n'
+                      'Why it matters: ' + str(finding.get('reason', '')) + '\n\n'
+                      'Provide a concise, safe remediation plan: (1) numbered step-by-step fix, '
+                      '(2) exact AWS CLI commands, (3) an equivalent Terraform snippet, and '
+                      '(4) one sentence on how to verify the fix and any downtime/rollback risk. '
+                      'Use plain text with clear headings, no markdown code fences.')
+            try:
+                bedrock = boto3.client('bedrock-runtime')
+                model_id = get_model_for_plan(customer_plan)
+                br = bedrock.invoke_model(modelId=model_id, body=json.dumps({
+                    'anthropic_version': 'bedrock-2023-05-31', 'max_tokens': 900,
+                    'system': 'You are a precise AWS security remediation assistant. Give safe, specific, copy-pasteable fixes.',
+                    'messages': [{'role': 'user', 'content': prompt}]}))
+                answer = json.loads(br['body'].read())['content'][0]['text']
+                return resp(200, {'remediation': answer, 'plan': customer_plan})
+            except Exception as e:
+                return resp(500, {'error': 'Remediation failed: ' + str(e)[:200]})
 
         elif path == '/subscription-status' and method == 'GET':
             if not caller_email:

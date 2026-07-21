@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CostGuard AI - AWS Cost Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg-base:#080d1a;--bg-surface:#0f172a;--bg-card:rgba(30,41,59,0.9);
@@ -267,11 +270,136 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   .rec-grid{grid-template-columns:1fr}
   .budget-form-row{flex-direction:column}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PREMIUM ENHANCEMENT LAYER — visual/motion only, no markup/JS/logic changes
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg-base:#05070e;
+  --border:rgba(148,163,184,.14);--border-subtle:rgba(148,163,184,.07);
+  --shadow:0 24px 70px -24px rgba(0,0,0,.75);
+  --glass:rgba(15,22,38,.6);--glass-2:rgba(19,27,46,.55);
+  --glass-border:rgba(255,255,255,.08);
+  --radius:22px;
+  --glow-cyan:rgba(56,189,248,.35);--glow-violet:rgba(139,92,246,.35);
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+[data-theme="dark"] body{background:
+  radial-gradient(1100px 700px at 12% -8%,rgba(37,99,235,.16),transparent 60%),
+  radial-gradient(1000px 650px at 108% 8%,rgba(139,92,246,.16),transparent 60%),
+  radial-gradient(900px 700px at 60% 115%,rgba(56,189,248,.10),transparent 60%),
+  var(--bg-base);}
+[data-theme="dark"] .main,[data-theme="dark"] .app{background:transparent}
+
+/* Ambient animated background (aurora orbs + noise) */
+#ambient{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+#ambient .orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.5;mix-blend-mode:screen;will-change:transform}
+#ambient .o1{width:46vw;height:46vw;left:-8vw;top:-10vw;background:radial-gradient(circle,rgba(56,189,248,.55),transparent 65%);animation:drift1 26s var(--ease) infinite alternate}
+#ambient .o2{width:42vw;height:42vw;right:-10vw;top:2vw;background:radial-gradient(circle,rgba(139,92,246,.5),transparent 65%);animation:drift2 30s var(--ease) infinite alternate}
+#ambient .o3{width:40vw;height:40vw;left:40vw;bottom:-16vw;background:radial-gradient(circle,rgba(129,140,248,.4),transparent 65%);animation:drift3 34s var(--ease) infinite alternate}
+#ambient .noise{position:absolute;inset:0;opacity:.05;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+[data-theme="light"] #ambient{opacity:.35}
+#spotlight{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(600px circle at var(--mx,50%) var(--my,-20%),rgba(120,170,255,.10),transparent 45%);transition:background .12s linear}
+.app,.auth-container{position:relative;z-index:1}
+@keyframes drift1{to{transform:translate(8vw,6vw) scale(1.15)}}
+@keyframes drift2{to{transform:translate(-7vw,5vw) scale(1.1)}}
+@keyframes drift3{to{transform:translate(4vw,-6vw) scale(1.2)}}
+
+/* Glass surfaces + premium depth */
+[data-theme="dark"] .sidebar{background:linear-gradient(180deg,rgba(12,18,32,.72),rgba(9,13,26,.82));backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-right:1px solid var(--glass-border);box-shadow:1px 0 40px rgba(0,0,0,.4)}
+[data-theme="dark"] .stat-card,[data-theme="dark"] .chart-card,[data-theme="dark"] .rec-card,[data-theme="dark"] .budget-form-card,[data-theme="dark"] .budget-row-card,[data-theme="dark"] .customer-card,[data-theme="dark"] .onboard-form,[data-theme="dark"] .chat-msg.bot,[data-theme="dark"] .step-box{
+  background:linear-gradient(160deg,var(--glass),var(--glass-2));
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--glass-border);
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset,var(--shadow);
+}
+.stat-card,.chart-card,.rec-card,.ai-card,.budget-form-card,.onboard-form,.data-table,.customer-card{border-radius:var(--radius)}
+.stat-card,.chart-card,.rec-card,.customer-card,.step-box,.budget-row-card{transition:transform .45s var(--ease),box-shadow .45s var(--ease),border-color .3s}
+.stat-card:hover,.chart-card:hover,.rec-card:hover,.customer-card:hover{transform:translateY(-6px);border-color:rgba(56,189,248,.35);box-shadow:0 30px 60px -28px rgba(0,0,0,.8),0 0 0 1px rgba(56,189,248,.18),0 0 40px -8px var(--glow-cyan)}
+.stat-card::before{height:100%;background:linear-gradient(180deg,rgba(56,189,248,.9),rgba(139,92,246,.9));width:3px;right:auto}
+.stat-card .value{background:linear-gradient(135deg,#e9f2ff,#a9c7ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.stat-card .value.green,.stat-card .value.red,.stat-card .value.blue,.stat-card .value.purple{-webkit-text-fill-color:initial}
+
+/* Sidebar layout — footer flows after nav (no large gap); scrolls if content is tall */
+.sidebar{overflow-y:auto;overflow-x:hidden}
+.sidebar-bottom{margin-top:12px}
+.sidebar::-webkit-scrollbar{width:6px}
+
+/* Sidebar nav — animated active indicator + hover */
+.nav-item{border-radius:12px;margin:2px 12px;padding:10px 14px;transition:background .25s var(--ease),color .25s,transform .2s}
+.nav-item:hover{transform:translateX(2px)}
+.nav-item.active{background:linear-gradient(90deg,rgba(56,189,248,.18),rgba(139,92,246,.10));border-right:none;color:#e9f6ff;box-shadow:0 0 0 1px rgba(56,189,248,.22),0 8px 24px -10px var(--glow-cyan)}
+.nav-item.active::before{content:'';position:absolute;left:-12px;top:50%;transform:translateY(-50%);width:3px;height:60%;border-radius:0 4px 4px 0;background:linear-gradient(180deg,#38bdf8,#8b5cf6);box-shadow:0 0 12px var(--glow-cyan)}
+.nav-item svg{transition:transform .3s var(--ease)}
+.nav-item:hover svg,.nav-item.active svg{transform:scale(1.12)}
+
+/* Premium buttons — gradient sheen, glow, ripple, spring press */
+.btn,.auth-box button,.chat-input-row button,.budget-save-btn,.rec-btn{position:relative;overflow:hidden;border-radius:12px;transition:transform .18s var(--ease),box-shadow .3s,filter .3s}
+.btn::after,.auth-box button::after,.chat-input-row button::after,.budget-save-btn::after{content:'';position:absolute;top:0;left:-120%;width:60%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-20deg);transition:left .6s var(--ease)}
+.btn:hover,.auth-box button:hover,.chat-input-row button:hover:not(:disabled),.budget-save-btn:hover{transform:translateY(-2px) scale(1.015);box-shadow:0 14px 30px -10px var(--glow-violet),0 6px 18px -8px var(--glow-cyan)}
+.btn:hover::after,.auth-box button:hover::after,.chat-input-row button:hover:not(:disabled)::after,.budget-save-btn:hover::after{left:130%}
+.btn:active,.auth-box button:active,.chat-input-row button:active,.budget-save-btn:active,.rec-btn:active{transform:scale(.97)}
+.rec-btn:hover{box-shadow:0 8px 22px -10px var(--glow-cyan);border-color:rgba(56,189,248,.5)}
+.refresh-btn:hover,.theme-toggle:hover,.model-btn:hover{transform:translateY(-1px)}
+
+/* Inputs — glass + animated focus ring */
+.auth-box input,.chat-input-row input,.budget-form-row input,.onboard-form input,.onboard-form select,.budget-form-row select{border-radius:12px;transition:border-color .25s,box-shadow .25s,background .25s}
+.auth-box input:focus,.chat-input-row input:focus,.budget-form-row input:focus,.onboard-form input:focus{border-color:#38bdf8;box-shadow:0 0 0 4px rgba(56,189,248,.14),0 0 24px -6px var(--glow-cyan)}
+
+/* AI card — living aurora border */
+.ai-card{border-radius:var(--radius);box-shadow:0 24px 70px -30px rgba(124,58,237,.6)}
+.ai-card::after{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(120deg,rgba(56,189,248,.6),rgba(139,92,246,.6),rgba(56,189,248,.6));background-size:200% 200%;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:auroraBorder 8s linear infinite;pointer-events:none}
+@keyframes auroraBorder{to{background-position:200% 0}}
+
+/* Chat polish + animated typing dots */
+.chat-msg{border-radius:18px}
+.chat-msg.user{box-shadow:0 10px 30px -12px var(--glow-violet)}
+.chat-typing{display:flex;align-items:center;gap:6px;animation:none}
+.chat-typing::after{content:'';display:inline-flex;width:34px;height:8px;background:radial-gradient(circle 3px at 5px 4px,var(--accent-cyan) 96%,transparent),radial-gradient(circle 3px at 17px 4px,var(--accent-indigo) 96%,transparent),radial-gradient(circle 3px at 29px 4px,var(--accent-purple) 96%,transparent);animation:typingDots 1s infinite}
+@keyframes typingDots{0%,100%{opacity:.35}50%{opacity:1}}
+
+/* Tables — floating grid, sticky header */
+.data-table{box-shadow:var(--shadow)}
+.data-table th{position:sticky;top:0;backdrop-filter:blur(8px);background:rgba(30,41,59,.85)}
+.data-table tbody tr:hover{background:rgba(56,189,248,.06)}
+.badge,.rec-effort,.badge-plan{box-shadow:0 2px 10px -4px rgba(0,0,0,.5)}
+
+/* Entrances — fade + blur up (re-runs when a view is shown) */
+@keyframes riseBlur{from{opacity:0;transform:translateY(14px);filter:blur(8px)}to{opacity:1;transform:translateY(0);filter:blur(0)}}
+.page-title,.page-subtitle,.section-header,.charts-row,.ai-card,.data-table,.chat-container,.budget-form-card,.onboard-form{animation:riseBlur .6s var(--ease) backwards}
+.page-subtitle{animation-delay:.06s}.section-header{animation-delay:.06s}.charts-row{animation-delay:.12s}.data-table{animation-delay:.18s}
+.chart-card:nth-child(1){animation:riseBlur .6s var(--ease) .1s backwards}.chart-card:nth-child(2){animation:riseBlur .6s var(--ease) .2s backwards}
+
+/* Shimmer skeleton + upgraded loader */
+.skeleton{position:relative;overflow:hidden;background:rgba(148,163,184,.08);border-radius:12px}
+.skeleton::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);animation:shimmer 1.4s infinite}
+@keyframes shimmer{to{transform:translateX(100%)}}
+.spinner{border-top-color:#38bdf8;border-right-color:#8b5cf6;box-shadow:0 0 24px -6px var(--glow-cyan)}
+
+/* Custom scrollbars */
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(56,189,248,.5),rgba(139,92,246,.5));border-radius:8px;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* Focus visibility (a11y) */
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,.nav-item:focus-visible{outline:2px solid #38bdf8;outline-offset:2px;border-radius:8px}
+
+/* Respect reduced motion */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  #ambient .orb,#spotlight{animation:none}
+}
 </style>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.2/dist/apexcharts.min.js"></script>
 </head>
 <body>
+
+<!-- Ambient premium background (visual only) -->
+<div id="ambient" aria-hidden="true"><span class="orb o1"></span><span class="orb o2"></span><span class="orb o3"></span><div class="noise"></div></div>
+<div id="spotlight" aria-hidden="true"></div>
 
 <!-- AUTH PAGE -->
 <div id="authPage" class="auth-container">
@@ -358,6 +486,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    </div>
    <div class="nav-item" onclick="navigate('alerts')" id="nav-alerts">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg><span>Alerts</span>
+   </div>
+   <div class="nav-item" onclick="navigate('security')" id="nav-security">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Security <span style="background:#fb7185;color:#4c0519;font-size:9px;padding:1px 6px;border-radius:10px;margin-left:4px;font-weight:700">AI</span></span>
    </div>
   </div>
 
@@ -489,6 +620,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    </div>
    <div id="savingsTotalBanner"></div>
    <div id="savingsContent"><div class="loader"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- SECURITY -->
+  <div id="view-security" class="hidden">
+   <div class="section-header">
+    <div>
+     <h2 class="page-title">Security Scan</h2>
+     <p class="page-subtitle">Live scan of your AWS resources for misconfigurations, with the reason and remediation — plus one-click AI fixes</p>
+    </div>
+    <button class="refresh-btn" onclick="loadSecurity()">↺ Re-scan</button>
+   </div>
+   <div id="securitySummary"></div>
+   <div id="securityContent"><div class="loader"><div class="spinner"></div></div></div>
   </div>
 
   <!-- BUDGETS -->
@@ -661,7 +805,7 @@ aws iam put-role-policy --role-name CostGuardReadRole --policy-name CostGuardRea
     <div id="modelSelectorRow" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
      <span style="font-size:11px;color:var(--text-faint);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Model:</span>
      <button class="model-btn active" id="modelHaiku" onclick="selectModel('haiku')">Haiku 4.5 (Free)</button>
-     <button class="model-btn" id="modelSonnet" onclick="selectModel('sonnet')">🔒 Sonnet 4.5 (Pro)</button>
+     <button class="model-btn" id="modelSonnet" onclick="selectModel('sonnet')">🔒 Sonnet 4.6 (Pro)</button>
      <button class="model-btn" id="modelOpus" onclick="selectModel('opus')">🔒 Opus 4.6 (Enterprise)</button>
     </div>
     <div class="chat-messages" id="chatMessages">
@@ -770,7 +914,7 @@ function updatePlanBadge(){
   const labels={free:'Free',pro:'Pro ✦',enterprise:'Enterprise ✦✦'},colors={free:'#64748b',pro:'#2563eb',enterprise:'#7c3aed'};
   b.textContent=labels[currentPlan]||'Free';b.style.background=colors[currentPlan]||'#64748b';
   const sonnet=document.getElementById('modelSonnet'),opus=document.getElementById('modelOpus');
-  if(sonnet)sonnet.textContent=currentPlan==='pro'||currentPlan==='enterprise'?'Sonnet 4.5 (Pro)':'🔒 Sonnet 4.5 (Pro)';
+  if(sonnet)sonnet.textContent=currentPlan==='pro'||currentPlan==='enterprise'?'Sonnet 4.6 (Pro)':'🔒 Sonnet 4.6 (Pro)';
   if(opus)opus.textContent=currentPlan==='enterprise'?'Opus 4.6 (Enterprise)':'🔒 Opus 4.6 (Enterprise)';
 }
 
@@ -820,6 +964,7 @@ function navigate(p){
   else if(p==='chat')document.getElementById('chatInput').focus();
   else if(p==='forecast')loadForecast();
   else if(p==='savings')loadSavings();
+  else if(p==='security')loadSecurity();
   else if(p==='budgets')loadBudgets();
   else if(p==='onboard'){initOnboardPage();switchOnboardTab('cfn');}
 }
@@ -902,7 +1047,8 @@ async function loadDashboard(){
       const el=document.getElementById('chartDonut');
       if(!el)return;
       if(!svcs.length){
-        el.innerHTML='<div style="padding:30px;text-align:center;font-size:13px;color:var(--text-muted)">No service data available yet.<br><span style="font-size:11px;color:var(--text-faint)">Cost Explorer data appears after 24h</span></div>';
+        const detail=r.error?('Cost Explorer error: '+r.error):'No billable AWS spend in the last 30 days — this chart populates automatically once your account has cost data.';
+        el.innerHTML='<div style="padding:30px;text-align:center;font-size:13px;color:var(--text-muted)">No service data available yet.<br><span style="font-size:11px;color:var(--text-faint)">'+detail+'</span></div>';
         return;
       }
       if(chartDonut){try{chartDonut.destroy();}catch(e){}chartDonut=null;}
@@ -1077,6 +1223,64 @@ function openChatWithContext(text){
   input.value='Help me implement this recommendation: '+text;
   input.focus();
 }
+
+// ── SECURITY SCAN ─────────────────────────────────────────────────────────────
+let __secFindings=[];
+const SEV_STYLE={CRITICAL:'#dc2626',HIGH:'#fb7185',MEDIUM:'#fbbf24',LOW:'#38bdf8'};
+async function loadSecurity(){
+  const summary=document.getElementById('securitySummary'),content=document.getElementById('securityContent');
+  summary.innerHTML='';content.innerHTML='<div class="loader"><div class="spinner"></div></div>';
+  try{
+    const d=await api('/security-scan');
+    if(d.error){throw new Error(d.error);}
+    __secFindings=d.findings||[];
+    if(!__secFindings.length){
+      content.innerHTML='<div style="padding:40px;text-align:center;color:var(--text-muted)"><div style="font-size:40px;margin-bottom:12px">🛡️</div><div style="font-size:16px;font-weight:600;margin-bottom:8px">No security issues found</div><div style="font-size:13px">Your scanned resources passed all checks. Re-scan periodically as your infrastructure changes.</div></div>';
+      return;
+    }
+    const c=d.counts||{};
+    summary.innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">'+
+      ['CRITICAL','HIGH','MEDIUM','LOW'].map(s=>`<div style="flex:1;min-width:120px;background:var(--card-bg,#0f172a);border:1px solid ${SEV_STYLE[s]}55;border-radius:10px;padding:12px 16px"><div style="font-size:22px;font-weight:800;color:${SEV_STYLE[s]}">${c[s]||0}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">${s}</div></div>`).join('')+
+      '</div>';
+    content.innerHTML='<div class="rec-grid">'+__secFindings.map((f,i)=>`
+      <div class="rec-card" style="border-left:4px solid ${SEV_STYLE[f.severity]||'#64748b'}">
+        <div class="rec-header">
+          <span style="font-size:10px;font-weight:800;letter-spacing:.5px;color:${SEV_STYLE[f.severity]||'#64748b'}">${f.severity}</span>
+          <span class="rec-resource" style="margin:0">📦 ${escHtml(f.service)}</span>
+        </div>
+        <div class="rec-action">${escHtml(f.title)}</div>
+        <div class="rec-resource" style="font-family:monospace;font-size:11px">${escHtml(f.resource)}</div>
+        <div class="rec-reason"><b>Why:</b> ${escHtml(f.reason)}</div>
+        <div class="rec-reason"><b>Remediation:</b> ${escHtml(f.remediation)}</div>
+        <button class="rec-btn" id="secfix-${i}" onclick="remediateFinding(${i})">🤖 Fix with AI →</button>
+        <div id="secout-${i}" style="display:none;margin-top:10px;padding:12px;background:rgba(56,189,248,.06);border-radius:8px;font-size:12px;white-space:pre-wrap;font-family:monospace;line-height:1.5"></div>
+      </div>`).join('')+'</div>';
+  }catch(e){
+    content.innerHTML=`<div style="padding:40px;text-align:center;color:var(--text-muted)">
+      <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">Could not run security scan</div>
+      <div style="font-size:13px">${escHtml(e.message)}</div>
+      <div style="font-size:12px;margin-top:12px;color:var(--text-faint)">Ensure your connected account role grants read access (s3:GetPublicAccessBlock, ec2:Describe*, rds:Describe*, iam:List*).</div>
+    </div>`;
+  }
+}
+async function remediateFinding(i){
+  const btn=document.getElementById('secfix-'+i),out=document.getElementById('secout-'+i);
+  if(!btn||!out)return;
+  btn.disabled=true;btn.textContent='🤖 Generating fix...';
+  out.style.display='block';out.textContent='Asking Claude for a step-by-step remediation...';
+  try{
+    const d=await apiPost('/security-remediate',{finding:__secFindings[i]});
+    if(d.error)throw new Error(d.error);
+    out.textContent=d.remediation||'No remediation returned.';
+    btn.textContent='🤖 Regenerate fix';
+  }catch(e){
+    out.textContent='Error: '+e.message;
+    btn.textContent='🤖 Retry';
+  }
+  btn.disabled=false;
+}
+function escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 // ── BUDGETS ───────────────────────────────────────────────────────────────────
 async function loadBudgets(){
@@ -1300,7 +1504,7 @@ async function sendChat(){
   const q=input.value.trim();if(!q)return;
   input.value='';btn.disabled=true;
   msgs.innerHTML+=`<div class="chat-msg user">${q}</div>`;
-  msgs.innerHTML+=`<div class="chat-typing" id="typing">🤖 Analyzing with Claude ${currentPlan==='enterprise'?'Opus 4.6':currentPlan==='pro'?'Sonnet 4.5':'Haiku 4.5'}...</div>`;
+  msgs.innerHTML+=`<div class="chat-typing" id="typing">🤖 Analyzing with Claude ${currentPlan==='enterprise'?'Opus 4.6':currentPlan==='pro'?'Sonnet 4.6':'Haiku 4.5'}...</div>`;
   msgs.scrollTop=msgs.scrollHeight;
   try{
     const d=await apiPost('/chat',{question:q});
@@ -1333,6 +1537,17 @@ async function startPayment(){
     const rzp=new Razorpay(options);rzp.on('payment.failed',function(resp){alert('Payment failed: '+resp.error.description);});rzp.open();
   }catch(e){alert('Error initiating payment: '+e.message);}
 }
+</script>
+<script>
+/* Mouse spotlight — visual only, GPU-friendly (rAF-throttled), respects reduced motion */
+(function(){
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  var rs=document.documentElement.style,px=0,py=0,queued=false;
+  window.addEventListener('pointermove',function(e){
+    px=e.clientX;py=e.clientY;
+    if(!queued){queued=true;requestAnimationFrame(function(){rs.setProperty('--mx',px+'px');rs.setProperty('--my',py+'px');queued=false;});}
+  },{passive:true});
+})();
 </script>
 </body>
 </html>
