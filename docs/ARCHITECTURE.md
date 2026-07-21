@@ -26,7 +26,7 @@ graph TB
 
     subgraph AI["🤖 AI — Amazon Bedrock"]
         H["Haiku 4.5\nFree Plan"]
-        SO["Sonnet 4.5\nPro Plan"]
+        SO["Sonnet 4.6\nPro Plan"]
         OP["Opus 4.6\nEnterprise"]
     end
 
@@ -109,7 +109,7 @@ graph TB
       │   │   │
       │   │   └────────► Amazon Bedrock
       │   │              ├── Haiku 4.5    (Free plan)
-      │   │              ├── Sonnet 4.5   (Pro plan)
+      │   │              ├── Sonnet 4.6   (Pro plan)
       │   │              └── Opus 4.6     (Enterprise)
       │   │
       │   └────────────► STS AssumeRole ──► Customer AWS Account
@@ -184,6 +184,7 @@ All tables: SSE enabled · PITR enabled · DeletionPolicy: Retain
 |---|---|
 | Core | `/health` `/dashboard` `/alerts` `/cost-summary` |
 | AI | `/chat` `/recommendations` `/service-breakdown` |
+| Security | `/security-scan` `/security-remediate` (POST) |
 | Reports | `/report` `/service-detail` |
 | Budgets | `/budgets` (GET + POST) |
 | Payments | `/create-order` `/verify-payment` `/subscription-status` |
@@ -194,10 +195,39 @@ All tables: SSE enabled · PITR enabled · DeletionPolicy: Retain
 | Plan | Model ID | Why |
 |---|---|---|
 | Free | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Fast, cheap, good enough for Q&A |
-| Pro | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Smarter analysis, better recommendations |
+| Pro | `us.anthropic.claude-sonnet-4-6` | Smarter analysis, better recommendations |
 | Enterprise | `us.anthropic.claude-opus-4-6-v1` | Maximum reasoning for complex optimization |
 
+> **Model access note:** Opus 4.8 / 4.7 / Sonnet 5 are not yet enabled for Bedrock access in the deployment account, so Sonnet 4.6 / Opus 4.6 are the newest usable models. Once access is granted in the Bedrock console, bump `PLAN_MODELS` in `dashboard_api.py`.
+
 > **Note:** `us.` prefix (cross-region inference profile) is required for Claude 4.x. Direct model IDs return `ValidationException: on-demand throughput isn't supported`.
+
+---
+
+## Security Scanning (Vulnerability Detection)
+
+The `/security-scan` route runs deterministic, read-only checks against the target account (host account for admin, customer's cross-account role otherwise) and returns findings sorted by severity. Each finding carries a `severity`, `service`, `resource`, `title`, `reason`, and `remediation`.
+
+```
+GET /security-scan
+    │
+    ▼
+run_security_scan(role_arn)  ── boto3 read-only calls
+    ├── S3   : Block Public Access disabled / no default encryption
+    ├── EC2  : security groups open to 0.0.0.0/0 on SSH/RDP/DB ports or all traffic
+    ├── EBS  : unencrypted volumes
+    ├── RDS  : publicly accessible / storage not encrypted
+    └── IAM  : users without MFA
+    │
+    ▼
+findings[] sorted by severity (CRITICAL > HIGH > MEDIUM > LOW), 5-min cached
+    │
+    ▼ (per finding, on demand)
+POST /security-remediate  ── Bedrock (plan model)
+    └── numbered fix + AWS CLI + Terraform snippet + verification/rollback note
+```
+
+Required read permissions on the scanning role: `s3:GetBucketPublicAccessBlock`, `s3:GetEncryptionConfiguration`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVolumes`, `rds:DescribeDBInstances`, `iam:ListUsers`, `iam:ListMFADevices`. The scan is fully read-only; remediation is advisory (the AI generates commands, it never executes changes automatically).
 
 ---
 
@@ -208,7 +238,11 @@ All tables: SSE enabled · PITR enabled · DeletionPolicy: Retain
 │                    Security Layers                        │
 │                                                          │
 │  1. Edge: CloudFront OAC — S3 bucket fully private       │
-│  2. Auth: Cognito JWT — every API call requires token    │
+│  2. Auth: Cognito JWT — verified in two layers:          │
+│     (a) API Gateway Cognito authorizer on core routes,   │
+│     (b) in-Lambda RS256 signature check against Cognito  │
+│         JWKS (iss/aud/exp) for every route, incl. the    │
+│         authType-NONE ones. Forged tokens are rejected.  │
 │  3. IAM: Lambda role — least-privilege, scoped to        │
 │          specific table ARNs, model ARNs, SES identity   │
 │  4. Cross-account: STS AssumeRole — temp creds (1hr)    │
