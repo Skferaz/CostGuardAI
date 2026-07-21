@@ -23,3 +23,9 @@ lambda/lambda*.zip
 .env
 .env.*
 !.env.example
+
+# Third-party skills + local Claude config (kept separate from CostGuard)
+.claude/
+
+# Interview prep guide (local only, not published)
+docs/INTERVIEW_QA.md
